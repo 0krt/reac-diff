@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REACTION–DIFFUSION</title>
+<style>
+  :root {
+    --bg: #0a0b0e;
+    --panel: rgba(16, 18, 23, 0.88);
+    --line: rgba(255, 255, 255, 0.08);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --ink: #d6dae2;
+    --ink-dim: #7c8494;
+    --accent: #7ef0c0;
+    --accent-dim: rgba(126, 240, 192, 0.35);
+    --danger: #ff5d6c;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); }
+  body { font-family: var(--mono); color: var(--ink); font-size: 12px; }
+
+  #canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+
+  /* ---------- header ---------- */
+  #header {
+    position: fixed; top: 0; left: 0; padding: 18px 22px;
+    pointer-events: none; user-select: none; z-index: 5;
+  }
+  #header h1 {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.35em;
+    color: var(--ink);
+  }
+  #header h1 em { font-style: normal; color: var(--accent); }
+  #header .sub {
+    margin-top: 5px; font-size: 10px; letter-spacing: 0.22em;
+    color: var(--ink-dim); text-transform: uppercase;
+  }
+
+  #status {
+    position: fixed; bottom: 0; left: 0; padding: 14px 22px;
+    font-size: 10px; letter-spacing: 0.14em; color: var(--ink-dim);
+    pointer-events: none; user-select: none; z-index: 5;
+    text-transform: uppercase;
+  }
+  #status .k { color: var(--ink); }
+
+  #recbadge {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    display: none; align-items: center; gap: 8px; z-index: 6;
+    background: var(--panel); border: 1px solid var(--line-strong);
+    padding: 7px 14px; border-radius: 3px; letter-spacing: 0.18em; font-size: 10px;
+  }
+  #recbadge.on { display: flex; }
+  #recbadge .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
+    animation: blink 1.1s steps(2, start) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.25; } }
+
+  /* ---------- panel ---------- */
+  #panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 292px; z-index: 10;
+    background: var(--panel); backdrop-filter: blur(14px);
+    border-left: 1px solid var(--line);
+    overflow-y: auto; overscroll-behavior: contain;
+    transition: transform 0.25s ease;
+  }
+  #panel.hidden { transform: translateX(100%); }
+  #panel::-webkit-scrollbar { width: 4px; }
+  #panel::-webkit-scrollbar-thumb { background: var(--line-strong); }
+
+  #paneltoggle {
+    position: fixed; top: 14px; right: 306px; z-index: 11;
+    background: var(--panel); border: 1px solid var(--line-strong); color: var(--ink-dim);
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em;
+    padding: 6px 10px; cursor: pointer; border-radius: 3px;
+    transition: right 0.25s ease;
+  }
+  body.panel-hidden #paneltoggle { right: 16px; }
+  #paneltoggle:hover { color: var(--accent); border-color: var(--accent-dim); }
+
+  .section { border-bottom: 1px solid var(--line); padding: 16px 18px 18px; }
+  .section h2 {
+    font-size: 9px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 14px;
+  }
+  .section h2 .tag { float: right; color: var(--accent); letter-spacing: 0.1em; }
+
+  /* param rows */
+  .param { margin-bottom: 12px; }
+  .param .row1 {
+    display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 5px;
+  }
+  .param label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink); }
+  .param .val { font-size: 10px; color: var(--accent); letter-spacing: 0.05em; }
+  .param .row2 { display: flex; align-items: center; gap: 8px; }
+
+  input[type="range"] {
+    flex: 1; -webkit-appearance: none; appearance: none; height: 18px; background: transparent; cursor: ew-resize;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px; background: var(--line-strong);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 9px; height: 9px; margin-top: -3.5px;
+    background: var(--accent); border-radius: 50%;
+  }
+  input[type="range"]::-moz-range-track { height: 2px; background: var(--line-strong); }
+  input[type="range"]::-moz-range-thumb {
+    width: 9px; height: 9px; background: var(--accent); border: none; border-radius: 50%;
+  }
+
+  .midibtn {
+    flex: none; width: 30px; height: 17px; font-family: var(--mono); font-size: 8px;
+    letter-spacing: 0.08em; color: var(--ink-dim);
+    background: transparent; border: 1px solid var(--line-strong); border-radius: 2px;
+    cursor: pointer; padding: 0; overflow: hidden; white-space: nowrap;
+  }
+  .midibtn:hover { color: var(--ink); border-color: var(--ink-dim); }
+  .midibtn.mapped { color: var(--accent); border-color: var(--accent-dim); }
+  .midibtn.learning {
+    color: var(--bg); background: var(--accent); border-color: var(--accent);
+    animation: blink 0.8s steps(2, start) infinite;
+  }
+
+  /* buttons / selects */
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+  button.act {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink); background: transparent; border: 1px solid var(--line-strong);
+    border-radius: 3px; padding: 7px 10px; cursor: pointer; flex: 1; min-width: 70px;
+  }
+  button.act:hover { border-color: var(--accent-dim); color: var(--accent); }
+  button.act.primary { border-color: var(--accent-dim); color: var(--accent); }
+  button.act.armed { border-color: var(--danger); color: var(--danger); }
+  button.act:disabled { opacity: 0.35; cursor: default; }
+
+  select {
+    width: 100%; font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em;
+    color: var(--ink); background: #0d0f13; border: 1px solid var(--line-strong);
+    border-radius: 3px; padding: 6px 8px; cursor: pointer; margin-bottom: 10px;
+  }
+  select:focus { outline: none; border-color: var(--accent-dim); }
+  .selrow { display: flex; gap: 6px; }
+  .selrow select { flex: 1; }
+  .sublabel { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim); margin: 2px 0 5px; }
+
+  .hint { font-size: 9.5px; line-height: 1.7; color: var(--ink-dim); letter-spacing: 0.04em; }
+  .hint b { color: var(--ink); font-weight: 400; }
+
+  #midistatus { font-size: 9.5px; color: var(--ink-dim); letter-spacing: 0.06em; line-height: 1.7; margin-bottom: 10px; }
+  #midistatus .ok { color: var(--accent); }
+  #midistatus .bad { color: var(--danger); }
+
+  #err {
+    position: fixed; inset: 0; display: none; z-index: 100;
+    background: var(--bg); color: var(--ink); padding: 40px;
+    font-size: 13px; line-height: 2;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="header">
+  <h1>REACTION<em>&nbsp;//&nbsp;</em>DIFFUSION</h1>
+  <div class="sub">gray–scott field synthesizer</div>
+</div>
+
+<div id="recbadge"><span class="dot"></span><span id="rectime">REC 00:00</span></div>
+
+<div id="status"></div>
+
+<button id="paneltoggle">☰</button>
+
+<div id="panel">
+  <div class="section">
+    <h2>Pattern <span class="tag" id="fk-readout"></span></h2>
+    <select id="preset"></select>
+    <div id="params-sim"></div>
+  </div>
+
+  <div class="section">
+    <h2>Simulation</h2>
+    <div id="params-engine"></div>
+    <div class="sublabel">resolution</div>
+    <select id="simscale">
+      <option value="0.25">quarter — fast</option>
+      <option value="0.5" selected>half — balanced</option>
+      <option value="1">full — detailed</option>
+    </select>
+    <div class="btnrow">
+      <button class="act" id="btn-pause">pause</button>
+      <button class="act" id="btn-seed">reseed</button>
+      <button class="act" id="btn-clear">clear</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Brush</h2>
+    <div id="params-brush"></div>
+    <div class="hint">drag on canvas to inject chemical B<br>hold <b>shift</b> (or right-drag) to erase</div>
+  </div>
+
+  <div class="section">
+    <h2>Rendering</h2>
+    <select id="palette"></select>
+    <div id="params-render"></div>
+  </div>
+
+  <div class="section">
+    <h2>MIDI</h2>
+    <div id="midistatus">probing midi access…</div>
+    <div class="btnrow">
+      <button class="act" id="btn-midiclear">clear mappings</button>
+    </div>
+    <div class="hint" style="margin-top:10px">
+      click the <b>[m]</b> button beside any slider, then move a controller knob to bind it. mappings persist locally.
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Export</h2>
+    <div class="sublabel">svg contour levels</div>
+    <div class="selrow">
+      <select id="svglevels">
+        <option value="1">1 level</option>
+        <option value="2">2 levels</option>
+        <option value="3" selected>3 levels</option>
+        <option value="4">4 levels</option>
+        <option value="6">6 levels</option>
+      </select>
+      <select id="svgstyle">
+        <option value="dark" selected>dark / ink</option>
+        <option value="plotter">plotter / white</option>
+      </select>
+    </div>
+    <div class="btnrow" style="margin-bottom:6px">
+      <button class="act" id="btn-svg">export svg</button>
+      <button class="act" id="btn-png">export png</button>
+    </div>
+    <div class="btnrow">
+      <button class="act primary" id="btn-rec">● record video</button>
+    </div>
+    <div class="hint" style="margin-top:10px">
+      video records the live canvas as webm. svg traces the current field with marching squares.
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Keys</h2>
+    <div class="hint">
+      <b>space</b> pause · <b>r</b> reseed · <b>c</b> clear<br>
+      <b>s</b> png · <b>v</b> record · <b>h</b> panel
+    </div>
+  </div>
+</div>
+
+<div id="err"></div>
+
+<script>
+'use strict';
+
+/* ================================================================
+   REACTION // DIFFUSION — gray-scott field synthesizer
+   webgl2 ping-pong sim · web-midi learn · svg + video export
+   ================================================================ */
+
+const canvas = document.getElementById('canvas');
+const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
+
+function fatal(msg) {
+  const el = document.getElementById('err');
+  el.style.display = 'block';
+  el.innerHTML = '<h1 style="letter-spacing:0.3em;font-size:13px">REACTION // DIFFUSION</h1><p style="margin-top:20px">' + msg + '</p>';
+  throw new Error(msg);
+}
+if (!gl) fatal('webgl2 is not available in this browser.');
+
+/* ---------------- float render target support ---------------- */
+let stateInternalFormat, stateType;
+if (gl.getExtension('EXT_color_buffer_float')) {
+  stateInternalFormat = gl.RG32F; stateType = gl.FLOAT;
+} else if (gl.getExtension('EXT_color_buffer_half_float')) {
+  stateInternalFormat = gl.RG16F; stateType = gl.HALF_FLOAT;
+} else {
+  fatal('floating point render targets are not supported (EXT_color_buffer_float missing).');
+}
+
+/* ---------------- shaders ---------------- */
+const VERT = `#version 300 es
+layout(location=0) in vec2 a_pos;
+out vec2 v_uv;
+void main() {
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const SIM_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+uniform vec2  u_texel;
+uniform float u_dA, u_dB, u_feed, u_kill, u_dt;
+uniform vec4  u_brush;      // x, y (uv), radius (px), mode: 0 off / 1 paint / -1 erase
+in vec2 v_uv;
+out vec4 outColor;
+
+void main() {
+  vec2 c  = texture(u_state, v_uv).rg;
+  vec2 lap = -c;
+  lap += 0.20 * texture(u_state, v_uv + vec2( u_texel.x, 0.0)).rg;
+  lap += 0.20 * texture(u_state, v_uv + vec2(-u_texel.x, 0.0)).rg;
+  lap += 0.20 * texture(u_state, v_uv + vec2(0.0,  u_texel.y)).rg;
+  lap += 0.20 * texture(u_state, v_uv + vec2(0.0, -u_texel.y)).rg;
+  lap += 0.05 * texture(u_state, v_uv + vec2( u_texel.x,  u_texel.y)).rg;
+  lap += 0.05 * texture(u_state, v_uv + vec2(-u_texel.x,  u_texel.y)).rg;
+  lap += 0.05 * texture(u_state, v_uv + vec2( u_texel.x, -u_texel.y)).rg;
+  lap += 0.05 * texture(u_state, v_uv + vec2(-u_texel.x, -u_texel.y)).rg;
+
+  float A = c.r, B = c.g;
+  float reaction = A * B * B;
+  vec2 next = c + vec2(
+    u_dA * lap.r - reaction + u_feed * (1.0 - A),
+    u_dB * lap.g + reaction - (u_kill + u_feed) * B
+  ) * u_dt;
+  next = clamp(next, 0.0, 1.0);
+
+  if (u_brush.w != 0.0) {
+    vec2 d = (v_uv - u_brush.xy) / u_texel;
+    float fall = 1.0 - smoothstep(u_brush.z * 0.55, u_brush.z, length(d));
+    if (fall > 0.0) {
+      next = (u_brush.w > 0.0)
+        ? mix(next, vec2(0.35, 0.95), fall)
+        : mix(next, vec2(1.00, 0.00), fall);
+    }
+  }
+  outColor = vec4(next, 0.0, 1.0);
+}`;
+
+const SEED_FRAG = `#version 300 es
+precision highp float;
+uniform float u_seed;      // random offset; negative => clear only
+uniform float u_cell;      // spot cell size in px
+in vec2 v_uv;
+out vec4 outColor;
+
+float hash(vec2 p) {
+  p = fract(p * vec2(233.34, 851.73));
+  p += dot(p, p + 23.45);
+  return fract(p.x * p.y);
+}
+
+void main() {
+  float B = 0.0;
+  if (u_seed >= 0.0) {
+    vec2 cell = floor(gl_FragCoord.xy / u_cell);
+    if (hash(cell + u_seed) > 0.965) B = 1.0;
+  }
+  outColor = vec4(1.0, B, 0.0, 1.0);
+}`;
+
+const COPY_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+in vec2 v_uv;
+out vec4 outColor;
+void main() { outColor = vec4(texture(u_state, v_uv).rg, 0.0, 1.0); }`;
+
+const DISPLAY_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+uniform sampler2D u_ramp;
+uniform float u_lo, u_hi;
+uniform vec2 u_texel;
+in vec2 v_uv;
+out vec4 outColor;
+void main() {
+  float B = texture(u_state, v_uv).g;
+  float t = smoothstep(u_lo, u_hi, B);
+  vec3 col = texture(u_ramp, vec2(t, 0.5)).rgb;
+  // faint relief from the field gradient for depth
+  float gx = texture(u_state, v_uv + vec2(u_texel.x, 0.0)).g - texture(u_state, v_uv - vec2(u_texel.x, 0.0)).g;
+  float gy = texture(u_state, v_uv + vec2(0.0, u_texel.y)).g - texture(u_state, v_uv - vec2(0.0, u_texel.y)).g;
+  col += (gx + gy) * 0.9 * t;
+  outColor = vec4(col, 1.0);
+}`;
+
+const EXTRACT_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+in vec2 v_uv;
+out vec4 outColor;
+void main() {
+  float B = texture(u_state, v_uv).g;
+  outColor = vec4(B, B, B, 1.0);
+}`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+    fatal('shader error: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function program(frag) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, frag));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+    fatal('link error: ' + gl.getProgramInfoLog(p));
+  const uniforms = {};
+  const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) {
+    const info = gl.getActiveUniform(p, i);
+    uniforms[info.name] = gl.getUniformLocation(p, info.name);
+  }
+  return { prog: p, u: uniforms };
+}
+
+const simProg     = program(SIM_FRAG);
+const seedProg    = program(SEED_FRAG);
+const copyProg    = program(COPY_FRAG);
+const displayProg = program(DISPLAY_FRAG);
+const extractProg = program(EXTRACT_FRAG);
+
+/* fullscreen quad */
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+const vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+/* ---------------- sim targets (ping-pong) ---------------- */
+let simW = 0, simH = 0;
+let fields = null;   // [{tex, fbo}, {tex, fbo}]
+let cur = 0;
+
+function makeField(w, h) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, stateInternalFormat, w, h);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+    fatal('framebuffer incomplete for simulation target.');
+  return { tex, fbo };
+}
+
+function allocSim(preserve) {
+  const scale = parseFloat(document.getElementById('simscale').value);
+  const w = Math.max(64, Math.min(2048, Math.round(canvas.width  * scale)));
+  const h = Math.max(64, Math.min(2048, Math.round(canvas.height * scale)));
+  if (w === simW && h === simH && fields) return;
+
+  const old = fields;
+  simW = w; simH = h;
+  fields = [makeField(w, h), makeField(w, h)];
+  cur = 0;
+
+  gl.viewport(0, 0, simW, simH);
+  if (preserve && old) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fields[0].fbo);
+    gl.useProgram(copyProg.prog);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, old[cur === 0 ? 0 : 1].tex);
+    gl.uniform1i(copyProg.u.u_state, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    old.forEach(f => { gl.deleteTexture(f.tex); gl.deleteFramebuffer(f.fbo); });
+  } else {
+    seed(true);
+  }
+}
+
+function seed(random) {
+  gl.viewport(0, 0, simW, simH);
+  gl.useProgram(seedProg.prog);
+  gl.uniform1f(seedProg.u.u_seed, random ? Math.random() * 1000 : -1);
+  gl.uniform1f(seedProg.u.u_cell, Math.max(6, simW / 90));
+  for (const f of fields) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+}
+
+/* ================================================================
+   parameters
+   ================================================================ */
+const P = {};   // id -> value
+const paramDefs = [
+  { id: 'feed',   label: 'feed rate',    min: 0.010, max: 0.110, step: 0.0001, value: 0.0367, dp: 4, sec: 'params-sim' },
+  { id: 'kill',   label: 'kill rate',    min: 0.040, max: 0.075, step: 0.0001, value: 0.0649, dp: 4, sec: 'params-sim' },
+  { id: 'dA',     label: 'diffusion a',  min: 0.60,  max: 1.40,  step: 0.001,  value: 1.00,   dp: 3, sec: 'params-sim' },
+  { id: 'dB',     label: 'diffusion b',  min: 0.15,  max: 0.80,  step: 0.001,  value: 0.50,   dp: 3, sec: 'params-sim' },
+  { id: 'dt',     label: 'timestep',     min: 0.40,  max: 1.30,  step: 0.01,   value: 1.00,   dp: 2, sec: 'params-engine' },
+  { id: 'steps',  label: 'steps / frame',min: 1,     max: 40,    step: 1,      value: 14,     dp: 0, sec: 'params-engine' },
+  { id: 'brush',  label: 'brush size',   min: 2,     max: 90,    step: 1,      value: 22,     dp: 0, sec: 'params-brush' },
+  { id: 'colLo',  label: 'level low',    min: 0.00,  max: 0.40,  step: 0.001,  value: 0.05,   dp: 3, sec: 'params-render' },
+  { id: 'colHi',  label: 'level high',   min: 0.05,  max: 0.80,  step: 0.001,  value: 0.38,   dp: 3, sec: 'params-render' },
+];
+const paramById = {};
+paramDefs.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; });
+
+function buildParamUI() {
+  for (const d of paramDefs) {
+    const wrap = document.createElement('div');
+    wrap.className = 'param';
+    wrap.innerHTML =
+      '<div class="row1"><label>' + d.label + '</label><span class="val" id="val-' + d.id + '"></span></div>' +
+      '<div class="row2">' +
+      '<input type="range" id="in-' + d.id + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + d.value + '">' +
+      '<button class="midibtn" id="midi-' + d.id + '" title="midi learn">m</button>' +
+      '</div>';
+    document.getElementById(d.sec).appendChild(wrap);
+    const input = wrap.querySelector('input');
+    input.addEventListener('input', () => setParam(d.id, parseFloat(input.value), false));
+    wrap.querySelector('.midibtn').addEventListener('click', e => midiLearnToggle(d.id, e.altKey));
+  }
+  paramDefs.forEach(d => refreshParamUI(d.id));
+}
+
+function setParam(id, value, updateSlider = true) {
+  const d = paramById[id];
+  value = Math.min(d.max, Math.max(d.min, value));
+  if (d.step >= 1) value = Math.round(value);
+  P[id] = value;
+  if (updateSlider) document.getElementById('in-' + id).value = value;
+  refreshParamUI(id);
+  if (id === 'feed' || id === 'kill') markPresetCustom();
+}
+
+function refreshParamUI(id) {
+  const d = paramById[id];
+  document.getElementById('val-' + id).textContent = P[id].toFixed(d.dp);
+  if (id === 'feed' || id === 'kill')
+    document.getElementById('fk-readout').textContent =
+      'f ' + P.feed.toFixed(4) + ' · k ' + P.kill.toFixed(4);
+}
+
+/* ---------------- presets ---------------- */
+const presets = [
+  { name: 'mitosis',        feed: 0.0367, kill: 0.0649 },
+  { name: 'coral growth',   feed: 0.0545, kill: 0.0620 },
+  { name: 'worms',          feed: 0.0580, kill: 0.0650 },
+  { name: 'maze',           feed: 0.0290, kill: 0.0570 },
+  { name: 'holes',          feed: 0.0390, kill: 0.0580 },
+  { name: 'solitons',       feed: 0.0300, kill: 0.0620 },
+  { name: 'chaos',          feed: 0.0260, kill: 0.0510 },
+  { name: 'u-skate world',  feed: 0.0620, kill: 0.0610 },
+  { name: 'fingerprints',   feed: 0.0370, kill: 0.0600 },
+  { name: 'pulsing waves',  feed: 0.0140, kill: 0.0450 },
+];
+function buildPresets() {
+  const sel = document.getElementById('preset');
+  presets.forEach((p, i) => {
+    const o = document.createElement('option');
+    o.value = i; o.textContent = p.name;
+    sel.appendChild(o);
+  });
+  const custom = document.createElement('option');
+  custom.value = -1; custom.textContent = 'custom'; custom.disabled = true;
+  sel.appendChild(custom);
+  sel.addEventListener('change', () => {
+    const p = presets[+sel.value];
+    if (!p) return;
+    setParam('feed', p.feed);
+    setParam('kill', p.kill);
+    sel.value = String(presets.indexOf(p));
+  });
+}
+function markPresetCustom() {
+  const sel = document.getElementById('preset');
+  const match = presets.findIndex(p =>
+    Math.abs(p.feed - P.feed) < 1e-6 && Math.abs(p.kill - P.kill) < 1e-6);
+  sel.value = String(match); // -1 selects the disabled 'custom' option
+}
+
+/* ---------------- palettes ---------------- */
+const palettes = [
+  { name: 'phosphor', stops: ['#050807', '#0b2e1f', '#14805a', '#7ef0c0', '#eafff5'] },
+  { name: 'ice',      stops: ['#04060f', '#0f2b52', '#2f6fb4', '#8fd0f4', '#f2fbff'] },
+  { name: 'ember',    stops: ['#0a0505', '#3b0f22', '#a02c22', '#f2933a', '#ffe9c4'] },
+  { name: 'violet',   stops: ['#070510', '#241145', '#6b2e9e', '#c77dff', '#f4e9ff'] },
+  { name: 'mono',     stops: ['#0a0b0e', '#33363d', '#83878f', '#d6dae2', '#ffffff'] },
+  { name: 'paper',    stops: ['#f4f1ea', '#c9c2b2', '#6f6754', '#33302a', '#0d0c0a'] },
+];
+let rampTex = null;
+function hexToRgb(hx) {
+  return [1, 3, 5].map(i => parseInt(hx.slice(i, i + 2), 16));
+}
+function buildRamp(stops) {
+  const N = 256;
+  const data = new Uint8Array(N * 4);
+  const cols = stops.map(hexToRgb);
+  for (let i = 0; i < N; i++) {
+    const t = i / (N - 1) * (cols.length - 1);
+    const j = Math.min(cols.length - 2, Math.floor(t));
+    const f = t - j;
+    for (let c = 0; c < 3; c++)
+      data[i * 4 + c] = Math.round(cols[j][c] * (1 - f) + cols[j + 1][c] * f);
+    data[i * 4 + 3] = 255;
+  }
+  if (!rampTex) {
+    rampTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, rampTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  gl.bindTexture(gl.TEXTURE_2D, rampTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, N, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+}
+let currentPalette = 0;
+function buildPaletteUI() {
+  const sel = document.getElementById('palette');
+  palettes.forEach((p, i) => {
+    const o = document.createElement('option');
+    o.value = i; o.textContent = p.name;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', () => {
+    currentPalette = +sel.value;
+    buildRamp(palettes[currentPalette].stops);
+  });
+  buildRamp(palettes[0].stops);
+}
+
+/* ================================================================
+   interaction — brush
+   ================================================================ */
+const brush = { active: false, x: 0, y: 0, mode: 1 };
+function brushPos(e) {
+  const r = canvas.getBoundingClientRect();
+  brush.x = (e.clientX - r.left) / r.width;
+  brush.y = 1 - (e.clientY - r.top) / r.height;
+}
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  brush.active = true;
+  brush.mode = (e.button === 2 || e.shiftKey) ? -1 : 1;
+  brushPos(e);
+});
+canvas.addEventListener('pointermove', e => { if (brush.active) brushPos(e); });
+canvas.addEventListener('pointerup',   () => { brush.active = false; });
+canvas.addEventListener('pointercancel', () => { brush.active = false; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ================================================================
+   MIDI — learn + mapping
+   ================================================================ */
+const MIDI_STORE = 'rd.midi.mappings.v1';
+let midiMap = {};          // paramId -> { ch, cc }
+let midiLearnTarget = null;
+try { midiMap = JSON.parse(localStorage.getItem(MIDI_STORE) || '{}'); } catch (e) { midiMap = {}; }
+
+function midiSave() { localStorage.setItem(MIDI_STORE, JSON.stringify(midiMap)); }
+
+function midiLearnToggle(id, altKey) {
+  if (midiLearnTarget === id) {
+    midiLearnTarget = null;              // cancel learn
+  } else if (altKey && midiMap[id]) {
+    delete midiMap[id]; midiSave();      // alt-click clears a single mapping
+  } else {
+    midiLearnTarget = id;
+  }
+  refreshMidiButtons();
+}
+
+function refreshMidiButtons() {
+  for (const d of paramDefs) {
+    const b = document.getElementById('midi-' + d.id);
+    b.classList.toggle('learning', midiLearnTarget === d.id);
+    b.classList.toggle('mapped', !!midiMap[d.id] && midiLearnTarget !== d.id);
+    b.textContent = midiLearnTarget === d.id ? '…'
+      : midiMap[d.id] ? String(midiMap[d.id].cc) : 'm';
+    b.title = midiMap[d.id]
+      ? 'mapped to cc ' + midiMap[d.id].cc + ' (ch ' + (midiMap[d.id].ch + 1) + ') — alt-click to clear'
+      : 'midi learn';
+  }
+}
+
+function midiStatus(html) { document.getElementById('midistatus').innerHTML = html; }
+
+function onMidiMessage(e) {
+  const [status, d1, d2] = e.data;
+  if ((status & 0xF0) !== 0xB0) return;    // control change only
+  const ch = status & 0x0F;
+  if (midiLearnTarget) {
+    midiMap[midiLearnTarget] = { ch, cc: d1 };
+    midiSave();
+    midiLearnTarget = null;
+    refreshMidiButtons();
+    return;
+  }
+  for (const id in midiMap) {
+    const m = midiMap[id];
+    if (m.cc === d1 && m.ch === ch && paramById[id]) {
+      const d = paramById[id];
+      setParam(id, d.min + (d2 / 127) * (d.max - d.min));
+    }
+  }
+}
+
+function initMidi() {
+  if (!navigator.requestMIDIAccess) {
+    midiStatus('<span class="bad">web midi unavailable</span> — use chrome or edge over https.');
+    return;
+  }
+  navigator.requestMIDIAccess({ sysex: false }).then(access => {
+    const attach = () => {
+      const names = [];
+      access.inputs.forEach(inp => {
+        inp.onmidimessage = onMidiMessage;
+        names.push(inp.name || 'input');
+      });
+      midiStatus(names.length
+        ? '<span class="ok">' + names.length + ' input' + (names.length > 1 ? 's' : '') + '</span> — ' +
+          names.map(n => n.replace(/[<>&]/g, '')).join(' · ')
+        : '<span class="bad">no midi inputs</span> — connect a controller.');
+    };
+    attach();
+    access.onstatechange = attach;
+  }).catch(() => midiStatus('<span class="bad">midi access denied</span>.'));
+}
+
+document.getElementById('btn-midiclear').addEventListener('click', () => {
+  midiMap = {}; midiSave(); midiLearnTarget = null; refreshMidiButtons();
+});
+
+/* ================================================================
+   SVG export — marching squares over the B field
+   ================================================================ */
+function readFieldB() {
+  // render B into an RGBA8 target at sim resolution and read it back
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, simW, simH);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.viewport(0, 0, simW, simH);
+  gl.useProgram(extractProg.prog);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fields[cur].tex);
+  gl.uniform1i(extractProg.u.u_state, 0);
+  gl.bindVertexArray(vao);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const px = new Uint8Array(simW * simH * 4);
+  gl.readPixels(0, 0, simW, simH, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.deleteFramebuffer(fbo);
+  gl.deleteTexture(tex);
+  // flip vertically so y grows downward (image/svg space)
+  const field = new Float32Array(simW * simH);
+  for (let y = 0; y < simH; y++) {
+    const srcRow = (simH - 1 - y) * simW;
+    const dstRow = y * simW;
+    for (let x = 0; x < simW; x++)
+      field[dstRow + x] = px[(srcRow + x) * 4] / 255;
+  }
+  return field;
+}
+
+function marchingSquares(field, w, h, level) {
+  const segs = [];
+  const lerpT = (a, b) => (level - a) / (b - a || 1e-9);
+  for (let y = 0; y < h - 1; y++) {
+    for (let x = 0; x < w - 1; x++) {
+      const tl = field[y * w + x],       tr = field[y * w + x + 1];
+      const bl = field[(y + 1) * w + x], br = field[(y + 1) * w + x + 1];
+      const idx = (tl > level ? 8 : 0) | (tr > level ? 4 : 0) | (br > level ? 2 : 0) | (bl > level ? 1 : 0);
+      if (idx === 0 || idx === 15) continue;
+      const top    = [x + lerpT(tl, tr), y];
+      const right  = [x + 1, y + lerpT(tr, br)];
+      const bottom = [x + lerpT(bl, br), y + 1];
+      const left   = [x, y + lerpT(tl, bl)];
+      switch (idx) {
+        case 1:  case 14: segs.push([left, bottom]); break;
+        case 2:  case 13: segs.push([bottom, right]); break;
+        case 3:  case 12: segs.push([left, right]); break;
+        case 4:  case 11: segs.push([top, right]); break;
+        case 6:  case 9:  segs.push([top, bottom]); break;
+        case 7:  case 8:  segs.push([left, top]); break;
+        case 5: case 10: {
+          const center = (tl + tr + bl + br) / 4;
+          const flip = (center > level) === (idx === 5);
+          if (flip) { segs.push([left, top]);    segs.push([bottom, right]); }
+          else      { segs.push([left, bottom]); segs.push([top, right]); }
+          break;
+        }
+      }
+    }
+  }
+  return joinSegments(segs);
+}
+
+function joinSegments(segs) {
+  const key = p => Math.round(p[0] * 64) + ':' + Math.round(p[1] * 64);
+  const adj = new Map();
+  segs.forEach((s, i) => {
+    for (const e of [0, 1]) {
+      const k = key(s[e]);
+      let arr = adj.get(k);
+      if (!arr) { arr = []; adj.set(k, arr); }
+      arr.push({ i, e });
+    }
+  });
+  const used = new Uint8Array(segs.length);
+  const takeNext = pt => {
+    const arr = adj.get(key(pt));
+    if (!arr) return null;
+    for (const { i, e } of arr) {
+      if (!used[i]) { used[i] = 1; return segs[i][1 - e]; }
+    }
+    return null;
+  };
+  const polys = [];
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = 1;
+    const line = [segs[i][0], segs[i][1]];
+    let p;
+    while ((p = takeNext(line[line.length - 1]))) line.push(p);
+    while ((p = takeNext(line[0]))) line.unshift(p);
+    if (line.length > 2) polys.push(line);
+  }
+  return polys;
+}
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+const stamp = () => new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+
+function exportSVG() {
+  const nLevels = +document.getElementById('svglevels').value;
+  const style = document.getElementById('svgstyle').value;
+  const field = readFieldB();
+
+  let maxB = 0;
+  for (let i = 0; i < field.length; i++) if (field[i] > maxB) maxB = field[i];
+  if (maxB < 0.02) { alert('field is empty — paint or reseed before exporting.'); return; }
+
+  const ramp = palettes[currentPalette].stops;
+  const bg  = style === 'plotter' ? '#ffffff' : ramp[0];
+  const ink = style === 'plotter' ? '#111111' : ramp[ramp.length - 1];
+
+  let paths = '';
+  let total = 0;
+  for (let li = 0; li < nLevels; li++) {
+    const level = maxB * (li + 1) / (nLevels + 1);
+    const polys = marchingSquares(field, simW, simH, level);
+    total += polys.length;
+    const op = (0.35 + 0.65 * (li + 1) / nLevels).toFixed(2);
+    let d = '';
+    for (const line of polys) {
+      d += 'M' + line[0][0].toFixed(2) + ' ' + line[0][1].toFixed(2);
+      for (let i = 1; i < line.length; i++)
+        d += 'L' + line[i][0].toFixed(2) + ' ' + line[i][1].toFixed(2);
+      const a = line[0], b = line[line.length - 1];
+      if (Math.abs(a[0] - b[0]) < 0.02 && Math.abs(a[1] - b[1]) < 0.02) d += 'Z';
+    }
+    if (d) paths += '  <path d="' + d + '" stroke="' + ink + '" stroke-opacity="' + op +
+      '" fill="none" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>\n';
+  }
+  if (!total) { alert('no contours found at the current levels.'); return; }
+
+  const svg =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + simW + ' ' + simH + '" ' +
+    'width="' + simW + '" height="' + simH + '">\n' +
+    '  <!-- reaction-diffusion · gray-scott · f=' + P.feed.toFixed(4) + ' k=' + P.kill.toFixed(4) + ' -->\n' +
+    '  <rect width="100%" height="100%" fill="' + bg + '"/>\n' +
+    paths +
+    '</svg>\n';
+  download(new Blob([svg], { type: 'image/svg+xml' }), 'reaction-diffusion-' + stamp() + '.svg');
+}
+
+function exportPNG() {
+  render(); // make sure the buffer is fresh
+  canvas.toBlob(b => b && download(b, 'reaction-diffusion-' + stamp() + '.png'), 'image/png');
+}
+
+/* ================================================================
+   video export — MediaRecorder on the canvas stream
+   ================================================================ */
+let recorder = null, recChunks = [], recStart = 0, recTimer = null;
+
+function pickMime() {
+  const candidates = [
+    'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4',
+  ];
+  for (const m of candidates)
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  return '';
+}
+
+function toggleRecord() {
+  const btn = document.getElementById('btn-rec');
+  if (recorder) { recorder.stop(); return; }
+
+  const mime = pickMime();
+  if (!mime) { alert('video recording is not supported in this browser.'); return; }
+  const stream = canvas.captureStream(60);
+  recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 14_000_000 });
+  recChunks = [];
+  recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+    download(new Blob(recChunks, { type: mime }), 'reaction-diffusion-' + stamp() + '.' + ext);
+    recorder = null; recChunks = [];
+    clearInterval(recTimer);
+    document.getElementById('recbadge').classList.remove('on');
+    btn.classList.remove('armed');
+    btn.textContent = '● record video';
+    stream.getTracks().forEach(t => t.stop());
+  };
+  recorder.start(250);
+  recStart = performance.now();
+  document.getElementById('recbadge').classList.add('on');
+  btn.classList.add('armed');
+  btn.textContent = '■ stop + save';
+  recTimer = setInterval(() => {
+    const s = Math.floor((performance.now() - recStart) / 1000);
+    document.getElementById('rectime').textContent =
+      'REC ' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  }, 250);
+}
+
+/* ================================================================
+   main loop
+   ================================================================ */
+let paused = false;
+let frames = 0, lastFpsT = performance.now(), fps = 0;
+
+function step() {
+  gl.bindVertexArray(vao);
+  gl.viewport(0, 0, simW, simH);
+  gl.useProgram(simProg.prog);
+  gl.uniform2f(simProg.u.u_texel, 1 / simW, 1 / simH);
+  gl.uniform1f(simProg.u.u_dA, P.dA);
+  gl.uniform1f(simProg.u.u_dB, P.dB);
+  gl.uniform1f(simProg.u.u_feed, P.feed);
+  gl.uniform1f(simProg.u.u_kill, P.kill);
+  gl.uniform1f(simProg.u.u_dt, P.dt);
+  const bScale = simW / canvas.width;   // brush size given in canvas px
+  gl.uniform4f(simProg.u.u_brush, brush.x, brush.y,
+    P.brush * bScale * (window.devicePixelRatio || 1),
+    brush.active ? brush.mode : 0);
+  gl.uniform1i(simProg.u.u_state, 0);
+  gl.activeTexture(gl.TEXTURE0);
+
+  const n = Math.round(P.steps);
+  for (let i = 0; i < n; i++) {
+    const src = fields[cur], dst = fields[1 - cur];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    cur = 1 - cur;
+  }
+}
+
+function render() {
+  gl.bindVertexArray(vao);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(displayProg.prog);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fields[cur].tex);
+  gl.uniform1i(displayProg.u.u_state, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, rampTex);
+  gl.uniform1i(displayProg.u.u_ramp, 1);
+  gl.uniform1f(displayProg.u.u_lo, Math.min(P.colLo, P.colHi - 0.001));
+  gl.uniform1f(displayProg.u.u_hi, P.colHi);
+  gl.uniform2f(displayProg.u.u_texel, 1 / simW, 1 / simH);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function frame() {
+  if (!paused || brush.active) step();
+  render();
+
+  frames++;
+  const now = performance.now();
+  if (now - lastFpsT > 500) {
+    fps = Math.round(frames * 1000 / (now - lastFpsT));
+    frames = 0; lastFpsT = now;
+    document.getElementById('status').innerHTML =
+      '<span class="k">' + simW + '×' + simH + '</span> field · ' +
+      '<span class="k">' + fps + '</span> fps · ' +
+      '<span class="k">' + Math.round(fps * P.steps) + '</span> steps/s' +
+      (paused ? ' · <span class="k">paused</span>' : '');
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ---------------- resize ---------------- */
+function resize() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width  = Math.round(canvas.clientWidth  * dpr);
+  canvas.height = Math.round(canvas.clientHeight * dpr);
+  allocSim(true);
+}
+window.addEventListener('resize', resize);
+
+/* ---------------- controls ---------------- */
+function setPaused(v) {
+  paused = v;
+  document.getElementById('btn-pause').textContent = paused ? 'resume' : 'pause';
+}
+document.getElementById('btn-pause').addEventListener('click', () => setPaused(!paused));
+document.getElementById('btn-seed').addEventListener('click', () => seed(true));
+document.getElementById('btn-clear').addEventListener('click', () => seed(false));
+document.getElementById('btn-svg').addEventListener('click', exportSVG);
+document.getElementById('btn-png').addEventListener('click', exportPNG);
+document.getElementById('btn-rec').addEventListener('click', toggleRecord);
+document.getElementById('simscale').addEventListener('change', () => allocSim(true));
+document.getElementById('paneltoggle').addEventListener('click', togglePanel);
+function togglePanel() {
+  document.getElementById('panel').classList.toggle('hidden');
+  document.body.classList.toggle('panel-hidden');
+}
+
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  switch (e.key) {
+    case ' ': e.preventDefault(); setPaused(!paused); break;
+    case 'r': seed(true); break;
+    case 'c': seed(false); break;
+    case 's': exportPNG(); break;
+    case 'v': toggleRecord(); break;
+    case 'h': togglePanel(); break;
+  }
+});
+
+/* ---------------- boot ---------------- */
+buildParamUI();
+buildPresets();
+buildPaletteUI();
+refreshMidiButtons();
+markPresetCustom();
+initMidi();
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
