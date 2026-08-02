@@ -169,7 +169,7 @@
 
 <div id="header">
   <h1>REACTION<em>&nbsp;//&nbsp;</em>DIFFUSION</h1>
-  <div class="sub">gray–scott field synthesizer</div>
+  <div class="sub" id="subtitle">organic pattern synthesizer</div>
 </div>
 
 <div id="recbadge"><span class="dot"></span><span id="rectime">REC 00:00</span></div>
@@ -178,20 +178,20 @@
 
 <div id="panel">
   <div class="section">
-    <h2>Pattern <span class="tag" id="fk-readout"></span></h2>
+    <h2>Model <span class="tag" id="model-tag"></span></h2>
+    <select id="model">
+      <option value="reaction" selected>reaction–diffusion</option>
+      <option value="voronoi">voronoi cells</option>
+      <option value="marble">marble veins</option>
+      <option value="metaballs">metaballs</option>
+      <option value="stripes">flow lines</option>
+    </select>
     <select id="preset"></select>
-    <div id="params-sim"></div>
+    <div id="params-model"></div>
+    <div class="hint" id="model-note"></div>
   </div>
 
-  <div class="section">
-    <h2>Diffusion bias</h2>
-    <div id="params-bias"></div>
-    <div class="hint">weights the laplacian so growth drifts in a direction — anisotropic diffusion.</div>
-  </div>
-
-  <div class="section">
-    <h2>Simulation</h2>
-    <div id="params-engine"></div>
+  <div class="section" id="sec-sim">
     <div class="sublabel">resolution</div>
     <select id="simscale">
       <option value="0.25">quarter — fast</option>
@@ -199,14 +199,19 @@
       <option value="1" selected>full — detailed</option>
       <option value="2">2× — ultra (heavy)</option>
     </select>
-    <div class="btnrow">
+    <div class="btnrow" style="margin-bottom:6px">
       <button class="act" id="btn-pause">pause</button>
+    </div>
+    <div class="btnrow" id="row-reaction">
       <button class="act" id="btn-seed">reseed</button>
       <button class="act" id="btn-clear">clear</button>
     </div>
+    <div class="btnrow" id="row-generative" style="display:none">
+      <button class="act primary" id="btn-generate">generate — new seed</button>
+    </div>
   </div>
 
-  <div class="section">
+  <div class="section" id="sec-draw">
     <h2>Draw</h2>
     <div class="toolrow" id="tools">
       <button class="tool active" data-tool="brush">brush</button>
@@ -280,7 +285,7 @@
   <div class="section">
     <h2>Keys</h2>
     <div class="hint">
-      <b>space</b> pause · <b>r</b> reseed · <b>c</b> clear · <b>1–4</b> tools<br>
+      <b>space</b> pause · <b>g</b> generate / reseed · <b>c</b> clear · <b>1–4</b> tools<br>
       <b>e</b> erase · <b>x</b> fill · <b>s</b> png · <b>v</b> record · <b>h</b> panel
     </div>
   </div>
@@ -480,6 +485,107 @@ in vec2 v_uv;
 out vec4 outColor;
 void main() { float B = texture(u_state, v_uv).g; outColor = vec4(B, B, B, 1.0); }`;
 
+/* ---- generative models: each writes a scalar field into .g ---- */
+const NOISE = `
+float hash1(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+vec2  hash2(vec2 p){ return vec2(hash1(p), hash1(p + 19.19)); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash1(i), b = hash1(i + vec2(1,0)), c = hash1(i + vec2(0,1)), d = hash1(i + vec2(1,1));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float fbm(vec2 p, int oct){
+  float v = 0.0, amp = 0.5;
+  for (int i = 0; i < 8; i++) { if (i >= oct) break; v += amp * vnoise(p); p *= 2.03; amp *= 0.5; }
+  return v;
+}`;
+
+const VORONOI_FRAG = `#version 300 es
+precision highp float;
+${NOISE}
+uniform vec2 u_res; uniform float u_time, u_seed, u_count, u_gap, u_smooth, u_jitter, u_drift;
+in vec2 v_uv; out vec4 outColor;
+void main() {
+  vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
+  vec2 p = v_uv * aspect * u_count;
+  vec2 n = floor(p), f = fract(p);
+  vec2 mr = vec2(0.0), mg = vec2(0.0); float md = 8.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 g = vec2(float(i), float(j));
+    vec2 o = hash2(n + g + vec2(u_seed)) * u_jitter;
+    o = 0.5 + 0.5 * sin(u_time * u_drift + 6.2831 * o);
+    vec2 r = g + o - f;
+    float d = dot(r, r);
+    if (d < md) { md = d; mr = r; mg = g; }
+  }
+  float border = 8.0;
+  for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
+    vec2 g = mg + vec2(float(i), float(j));
+    vec2 o = hash2(n + g + vec2(u_seed)) * u_jitter;
+    o = 0.5 + 0.5 * sin(u_time * u_drift + 6.2831 * o);
+    vec2 r = g + o - f;
+    vec2 diff = r - mr;
+    if (dot(diff, diff) > 1e-4) border = min(border, dot(0.5 * (mr + r), normalize(diff)));
+  }
+  float cell = smoothstep(u_gap, u_gap + u_smooth + 0.001, border);
+  outColor = vec4(vec3(cell), 1.0);
+}`;
+
+const MARBLE_FRAG = `#version 300 es
+precision highp float;
+${NOISE}
+uniform vec2 u_res; uniform float u_time, u_seed, u_scale, u_warp, u_detail, u_contrast, u_flow;
+in vec2 v_uv; out vec4 outColor;
+void main() {
+  vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
+  vec2 p = v_uv * aspect * u_scale + u_seed * 13.0;
+  int oct = int(u_detail);
+  vec2 q = vec2(fbm(p + vec2(0.0, u_time * u_flow), oct), fbm(p + vec2(5.2, 1.3), oct));
+  vec2 r = vec2(fbm(p + u_warp * q + vec2(1.7, 9.2) + u_time * 0.05 * u_flow, oct),
+                fbm(p + u_warp * q + vec2(8.3, 2.8), oct));
+  float v = fbm(p + u_warp * r, oct);
+  v = smoothstep(0.5 - u_contrast * 0.5, 0.5 + u_contrast * 0.5, v);
+  outColor = vec4(vec3(v), 1.0);
+}`;
+
+const METABALLS_FRAG = `#version 300 es
+precision highp float;
+${NOISE}
+uniform vec2 u_res; uniform float u_time, u_seed, u_count, u_radius, u_threshold, u_speed;
+in vec2 v_uv; out vec4 outColor;
+void main() {
+  vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
+  vec2 uv = v_uv * aspect;
+  int N = int(u_count);
+  float field = 0.0;
+  for (int i = 0; i < 32; i++) {
+    if (i >= N) break;
+    vec2 s = hash2(vec2(float(i) * 3.1 + u_seed, 7.0));
+    vec2 c = 0.5 * aspect + (aspect * 0.5 - 0.08) * sin(u_time * u_speed * (0.4 + s.x) + 6.2831 * s + vec2(0.0, 1.5708));
+    float d = distance(uv, c);
+    field += (u_radius * u_radius) / (d * d + 1e-4);
+  }
+  float v = smoothstep(u_threshold * 0.8, u_threshold * 1.2, field);
+  outColor = vec4(vec3(v), 1.0);
+}`;
+
+const STRIPES_FRAG = `#version 300 es
+precision highp float;
+${NOISE}
+uniform vec2 u_res; uniform float u_time, u_seed, u_freq, u_warp, u_angle, u_detail, u_flow;
+in vec2 v_uv; out vec4 outColor;
+void main() {
+  vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
+  vec2 p = v_uv * aspect + u_seed * 7.0;
+  vec2 dir = vec2(cos(u_angle), sin(u_angle));
+  int oct = int(u_detail);
+  float w = fbm(p * 1.6 + u_time * 0.1 * u_flow, oct);
+  float phase = dot(p, dir) * u_freq + u_warp * (w - 0.5) * 6.2831 + u_time * 0.2 * u_flow;
+  float v = 0.5 + 0.5 * sin(phase * 6.2831);
+  outColor = vec4(vec3(v), 1.0);
+}`;
+
 function compile(type, src) {
   const s = gl.createShader(type);
   gl.shaderSource(s, src); gl.compileShader(s);
@@ -505,6 +611,10 @@ const stampProg    = program(STAMP_FRAG);
 const stampTexProg = program(STAMPTEX_FRAG);
 const displayProg  = program(DISPLAY_FRAG);
 const extractProg  = program(EXTRACT_FRAG);
+const voronoiProg  = program(VORONOI_FRAG);
+const marbleProg   = program(MARBLE_FRAG);
+const metaballProg = program(METABALLS_FRAG);
+const stripesProg  = program(STRIPES_FRAG);
 
 const vao = gl.createVertexArray();
 gl.bindVertexArray(vao);
@@ -515,23 +625,25 @@ gl.enableVertexAttribArray(0);
 gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
 /* ---------------- sim targets (ping-pong) ---------------- */
-let simW = 0, simH = 0, fields = null, cur = 0;
+let simW = 0, simH = 0, fields = null, cur = 0, genField = null;
+const genInternalFormat = (stateType === gl.FLOAT) ? gl.RGBA32F : gl.RGBA16F;
 
-function makeField(w, h) {
+function makeTex(w, h, internal, wrap) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texStorage2D(gl.TEXTURE_2D, 1, stateInternalFormat, w, h);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, internal, w, h);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
   const fbo = gl.createFramebuffer();
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
   if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
-    fatal('framebuffer incomplete for simulation target.');
+    fatal('framebuffer incomplete for a render target.');
   return { tex, fbo };
 }
+const makeField = (w, h) => makeTex(w, h, stateInternalFormat, gl.REPEAT);
 
 function allocSim(preserve) {
   const scale = parseFloat(document.getElementById('simscale').value);
@@ -541,6 +653,8 @@ function allocSim(preserve) {
   const old = fields;
   simW = w; simH = h;
   fields = [makeField(w, h), makeField(w, h)];
+  if (genField) { gl.deleteTexture(genField.tex); gl.deleteFramebuffer(genField.fbo); }
+  genField = makeTex(w, h, genInternalFormat, gl.CLAMP_TO_EDGE);
   cur = 0;
   gl.bindVertexArray(vao);
   gl.viewport(0, 0, simW, simH);
@@ -570,57 +684,99 @@ function seed(random) {
    parameters
    ================================================================ */
 const P = {};
-const paramDefs = [
-  { id: 'feed',   label: 'feed rate',     min: 0.010, max: 0.110, step: 0.0001, value: 0.0367, dp: 4, sec: 'params-sim' },
-  { id: 'kill',   label: 'kill rate',     min: 0.040, max: 0.075, step: 0.0001, value: 0.0649, dp: 4, sec: 'params-sim' },
-  { id: 'dA',     label: 'diffusion a',   min: 0.60,  max: 1.40,  step: 0.001,  value: 1.00,   dp: 3, sec: 'params-sim' },
-  { id: 'dB',     label: 'diffusion b',   min: 0.15,  max: 0.80,  step: 0.001,  value: 0.50,   dp: 3, sec: 'params-sim' },
-  { id: 'biasX',  label: 'bias x',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2, sec: 'params-bias' },
-  { id: 'biasY',  label: 'bias y',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2, sec: 'params-bias' },
-  { id: 'dt',     label: 'timestep',      min: 0.40,  max: 1.30,  step: 0.01,   value: 1.00,   dp: 2, sec: 'params-engine' },
-  { id: 'steps',  label: 'steps / frame', min: 1,     max: 40,    step: 1,      value: 12,     dp: 0, sec: 'params-engine' },
-  { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0, sec: 'params-brush' },
-  { id: 'stab',   label: 'stabilizer',    min: 0.00,  max: 0.92,  step: 0.01,   value: 0.55,   dp: 2, sec: 'params-brush' },
-  { id: 'colLo',  label: 'level low',     min: 0.00,  max: 0.40,  step: 0.001,  value: 0.05,   dp: 3, sec: 'params-render' },
-  { id: 'colHi',  label: 'level high',    min: 0.05,  max: 0.80,  step: 0.001,  value: 0.34,   dp: 3, sec: 'params-render' },
-  { id: 'relief', label: 'relief',        min: 0.00,  max: 1.00,  step: 0.01,   value: 0.45,   dp: 2, sec: 'params-render' },
-  { id: 'shine',  label: 'specular',      min: 0.00,  max: 0.80,  step: 0.01,   value: 0.30,   dp: 2, sec: 'params-render' },
-  { id: 'light',  label: 'light angle',   min: 0,     max: 360,   step: 1,      value: 135,    dp: 0, sec: 'params-render' },
+const RENDER_PARAMS = [
+  { id: 'colLo',  label: 'level low',     min: 0.00,  max: 0.40,  step: 0.001,  value: 0.05,   dp: 3 },
+  { id: 'colHi',  label: 'level high',    min: 0.05,  max: 0.80,  step: 0.001,  value: 0.34,   dp: 3 },
+  { id: 'relief', label: 'relief',        min: 0.00,  max: 1.00,  step: 0.01,   value: 0.45,   dp: 2 },
+  { id: 'shine',  label: 'specular',      min: 0.00,  max: 0.80,  step: 0.01,   value: 0.30,   dp: 2 },
+  { id: 'light',  label: 'light angle',   min: 0,     max: 360,   step: 1,      value: 135,    dp: 0 },
 ];
+const DRAW_PARAMS = [
+  { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0 },
+  { id: 'stab',   label: 'stabilizer',    min: 0.00,  max: 0.92,  step: 0.01,   value: 0.55,   dp: 2 },
+];
+const MODEL_PARAMS = {
+  reaction: [
+    { id: 'feed',   label: 'feed rate',     min: 0.010, max: 0.110, step: 0.0001, value: 0.0367, dp: 4 },
+    { id: 'kill',   label: 'kill rate',     min: 0.040, max: 0.075, step: 0.0001, value: 0.0649, dp: 4 },
+    { id: 'dA',     label: 'diffusion a',   min: 0.60,  max: 1.40,  step: 0.001,  value: 1.00,   dp: 3 },
+    { id: 'dB',     label: 'diffusion b',   min: 0.15,  max: 0.80,  step: 0.001,  value: 0.50,   dp: 3 },
+    { id: 'biasX',  label: 'bias x',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2 },
+    { id: 'biasY',  label: 'bias y',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2 },
+    { id: 'dt',     label: 'timestep',      min: 0.40,  max: 1.30,  step: 0.01,   value: 1.00,   dp: 2 },
+    { id: 'steps',  label: 'steps / frame', min: 1,     max: 40,    step: 1,      value: 12,     dp: 0 },
+  ],
+  voronoi: [
+    { id: 'vor_count',  label: 'cell count',  min: 3,    max: 30,   step: 1,     value: 9,    dp: 0 },
+    { id: 'vor_gap',    label: 'cell gap',    min: 0.00, max: 0.35, step: 0.005, value: 0.07, dp: 3 },
+    { id: 'vor_smooth', label: 'cell smooth', min: 0.00, max: 0.35, step: 0.005, value: 0.09, dp: 3 },
+    { id: 'vor_jitter', label: 'jitter',      min: 0.00, max: 1.00, step: 0.01,  value: 0.90, dp: 2 },
+    { id: 'vor_drift',  label: 'drift',       min: 0.00, max: 2.50, step: 0.01,  value: 0.00, dp: 2 },
+  ],
+  marble: [
+    { id: 'mar_scale',    label: 'scale',    min: 1.0, max: 12.0, step: 0.1,  value: 3.5, dp: 1 },
+    { id: 'mar_warp',     label: 'warp',     min: 0.0, max: 8.0,  step: 0.1,  value: 4.0, dp: 1 },
+    { id: 'mar_detail',   label: 'detail',   min: 1,   max: 7,    step: 1,    value: 5,   dp: 0 },
+    { id: 'mar_contrast', label: 'contrast', min: 0.1, max: 1.0,  step: 0.01, value: 0.6, dp: 2 },
+    { id: 'mar_flow',     label: 'flow',     min: 0.0, max: 2.0,  step: 0.01, value: 0.3, dp: 2 },
+  ],
+  metaballs: [
+    { id: 'mb_count',     label: 'blob count', min: 2,    max: 32,   step: 1,    value: 12,   dp: 0 },
+    { id: 'mb_radius',    label: 'blob size',  min: 0.02, max: 0.24, step: 0.005,value: 0.10, dp: 3 },
+    { id: 'mb_threshold', label: 'threshold',  min: 0.2,  max: 3.0,  step: 0.01, value: 1.0,  dp: 2 },
+    { id: 'mb_speed',     label: 'motion',     min: 0.0,  max: 2.0,  step: 0.01, value: 0.6,  dp: 2 },
+  ],
+  stripes: [
+    { id: 'st_freq',   label: 'frequency', min: 1.0, max: 14.0, step: 0.1,  value: 6.0, dp: 1 },
+    { id: 'st_warp',   label: 'warp',      min: 0.0, max: 2.5,  step: 0.01, value: 0.9, dp: 2 },
+    { id: 'st_angle',  label: 'angle',     min: 0.0, max: 3.14, step: 0.01, value: 0.7, dp: 2 },
+    { id: 'st_detail', label: 'detail',    min: 1,   max: 6,    step: 1,    value: 4,   dp: 0 },
+    { id: 'st_flow',   label: 'flow',      min: 0.0, max: 2.0,  step: 0.01, value: 0.4, dp: 2 },
+  ],
+};
 const paramById = {};
-paramDefs.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; });
+[RENDER_PARAMS, DRAW_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
+  list.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; }));
 
-function buildParamUI() {
-  for (const d of paramDefs) {
+function buildParamRows(list, container, clear) {
+  if (clear) container.innerHTML = '';
+  for (const d of list) {
     const wrap = document.createElement('div');
     wrap.className = 'param';
     wrap.innerHTML =
       '<div class="row1"><label>' + d.label + '</label><span class="val" id="val-' + d.id + '"></span></div>' +
       '<div class="row2">' +
-      '<input type="range" id="in-' + d.id + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + d.value + '">' +
+      '<input type="range" id="in-' + d.id + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + P[d.id] + '">' +
       '<button class="midibtn" id="midi-' + d.id + '" title="midi learn">m</button></div>';
-    document.getElementById(d.sec).appendChild(wrap);
+    container.appendChild(wrap);
     const input = wrap.querySelector('input');
     input.addEventListener('input', () => setParam(d.id, parseFloat(input.value), false));
     wrap.querySelector('.midibtn').addEventListener('click', e => midiLearnToggle(d.id, e.altKey));
+    refreshParamUI(d.id);
   }
-  paramDefs.forEach(d => refreshParamUI(d.id));
 }
 
 function setParam(id, value, updateSlider = true) {
   const d = paramById[id];
+  if (!d) return;
   value = Math.min(d.max, Math.max(d.min, value));
   if (d.step >= 1) value = Math.round(value);
   P[id] = value;
-  if (updateSlider) document.getElementById('in-' + id).value = value;
+  const slider = document.getElementById('in-' + id);
+  if (updateSlider && slider) slider.value = value;
   refreshParamUI(id);
-  if (id === 'feed' || id === 'kill') markPresetCustom();
+  if (id === 'feed' || id === 'kill') { markPresetCustom(); updateModelTag(); }
 }
 function refreshParamUI(id) {
   const d = paramById[id];
-  document.getElementById('val-' + id).textContent = P[id].toFixed(d.dp);
-  if (id === 'feed' || id === 'kill')
-    document.getElementById('fk-readout').textContent = 'f ' + P.feed.toFixed(4) + ' · k ' + P.kill.toFixed(4);
+  const valEl = document.getElementById('val-' + id);
+  if (valEl) valEl.textContent = P[id].toFixed(d.dp);
+}
+function updateModelTag() {
+  const tag = document.getElementById('model-tag');
+  tag.textContent = currentModel === 'reaction'
+    ? 'f ' + P.feed.toFixed(4) + ' · k ' + P.kill.toFixed(4)
+    : MODELS[currentModel].label;
 }
 
 /* ---------------- presets ---------------- */
@@ -691,6 +847,65 @@ function buildPaletteUI() {
 }
 
 /* ================================================================
+   pattern models — reaction-diffusion (dynamic, ping-pong) plus
+   generative shader models that each render a scalar field into
+   .g of genField, so the display / export / midi paths are shared.
+   ================================================================ */
+let currentModel = 'reaction';
+let simTime = 0, genSeed = Math.random() * 100;
+
+const MODELS = {
+  reaction:  { label: 'reaction–diffusion', generative: false },
+  voronoi:   { label: 'voronoi cells',  generative: true, program: () => voronoiProg,
+    note: 'organic cellular partition — gap and smooth control the borders.',
+    set(u) { gl.uniform1f(u.u_count, P.vor_count); gl.uniform1f(u.u_gap, P.vor_gap);
+      gl.uniform1f(u.u_smooth, P.vor_smooth); gl.uniform1f(u.u_jitter, P.vor_jitter); gl.uniform1f(u.u_drift, P.vor_drift); } },
+  marble:    { label: 'marble veins',   generative: true, program: () => marbleProg,
+    note: 'domain-warped noise — flowing marble and vein structures.',
+    set(u) { gl.uniform1f(u.u_scale, P.mar_scale); gl.uniform1f(u.u_warp, P.mar_warp);
+      gl.uniform1f(u.u_detail, P.mar_detail); gl.uniform1f(u.u_contrast, P.mar_contrast); gl.uniform1f(u.u_flow, P.mar_flow); } },
+  metaballs: { label: 'metaballs',      generative: true, program: () => metaballProg,
+    note: 'merging blobs — raise motion for a lava-lamp flow.',
+    set(u) { gl.uniform1f(u.u_count, P.mb_count); gl.uniform1f(u.u_radius, P.mb_radius);
+      gl.uniform1f(u.u_threshold, P.mb_threshold); gl.uniform1f(u.u_speed, P.mb_speed); } },
+  stripes:   { label: 'flow lines',     generative: true, program: () => stripesProg,
+    note: 'warped wavefronts — fingerprint and topographic contours.',
+    set(u) { gl.uniform1f(u.u_freq, P.st_freq); gl.uniform1f(u.u_warp, P.st_warp);
+      gl.uniform1f(u.u_angle, P.st_angle); gl.uniform1f(u.u_detail, P.st_detail); gl.uniform1f(u.u_flow, P.st_flow); } },
+};
+
+const activeField = () => (currentModel === 'reaction' ? fields[cur].tex : genField.tex);
+
+function renderGenerative() {
+  const m = MODELS[currentModel], prog = m.program();
+  gl.bindVertexArray(vao);
+  gl.viewport(0, 0, simW, simH);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, genField.fbo);
+  gl.useProgram(prog.prog);
+  gl.uniform2f(prog.u.u_res, simW, simH);
+  gl.uniform1f(prog.u.u_time, simTime);
+  gl.uniform1f(prog.u.u_seed, genSeed);
+  m.set(prog.u);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+function selectModel(name) {
+  currentModel = name;
+  const m = MODELS[name];
+  buildParamRows(MODEL_PARAMS[name], document.getElementById('params-model'), true);
+  document.getElementById('preset').style.display = name === 'reaction' ? '' : 'none';
+  document.getElementById('sec-draw').style.display = name === 'reaction' ? '' : 'none';
+  document.getElementById('row-reaction').style.display = name === 'reaction' ? '' : 'none';
+  document.getElementById('row-generative').style.display = name === 'reaction' ? 'none' : '';
+  document.getElementById('model-note').textContent = m.generative ? m.note : '';
+  document.getElementById('model').value = name;
+  document.getElementById('subtitle').textContent =
+    name === 'reaction' ? 'gray–scott reaction–diffusion' : m.label;
+  updateModelTag();
+  refreshMidiButtons();
+}
+
+/* ================================================================
    drawing tools — all painting goes through GPU stamps, so it is
    fully independent of the reaction step (works while paused).
    ================================================================ */
@@ -756,6 +971,7 @@ function pos(e) {
 }
 
 canvas.addEventListener('pointerdown', e => {
+  if (currentModel !== 'reaction') return;
   canvas.setPointerCapture(e.pointerId);
   const { uv, client } = pos(e);
   draw.erasing = draw.eraseToggle !== e.shiftKey;
@@ -894,15 +1110,15 @@ function midiLearnToggle(id, altKey) {
   refreshMidiButtons();
 }
 function refreshMidiButtons() {
-  for (const d of paramDefs) {
-    const b = document.getElementById('midi-' + d.id);
-    b.classList.toggle('learning', midiLearnTarget === d.id);
-    b.classList.toggle('mapped', !!midiMap[d.id] && midiLearnTarget !== d.id);
-    b.textContent = midiLearnTarget === d.id ? '…' : midiMap[d.id] ? String(midiMap[d.id].cc) : 'm';
-    b.title = midiMap[d.id]
-      ? 'mapped to cc ' + midiMap[d.id].cc + ' (ch ' + (midiMap[d.id].ch + 1) + ') — alt-click to clear'
+  document.querySelectorAll('.midibtn').forEach(b => {
+    const id = b.id.replace('midi-', '');
+    b.classList.toggle('learning', midiLearnTarget === id);
+    b.classList.toggle('mapped', !!midiMap[id] && midiLearnTarget !== id);
+    b.textContent = midiLearnTarget === id ? '…' : midiMap[id] ? String(midiMap[id].cc) : 'm';
+    b.title = midiMap[id]
+      ? 'mapped to cc ' + midiMap[id].cc + ' (ch ' + (midiMap[id].ch + 1) + ') — alt-click to clear'
       : 'midi learn';
-  }
+  });
 }
 function midiStatus(html) { document.getElementById('midistatus').innerHTML = html; }
 function onMidiMessage(e) {
@@ -955,7 +1171,7 @@ function readFieldB() {
   gl.viewport(0, 0, simW, simH);
   gl.useProgram(extractProg.prog);
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, fields[cur].tex);
+  gl.bindTexture(gl.TEXTURE_2D, activeField());
   gl.uniform1i(extractProg.u.u_state, 0);
   gl.bindVertexArray(vao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -1020,6 +1236,7 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 const stamp = () => new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+const fileBase = () => (currentModel === 'reaction' ? 'reaction-diffusion' : currentModel) + '-' + stamp();
 
 function exportSVG() {
   const nLevels = +document.getElementById('svglevels').value;
@@ -1050,11 +1267,11 @@ function exportSVG() {
   const svg =
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + simW + ' ' + simH + '" width="' + simW + '" height="' + simH + '">\n' +
-    '  <!-- reaction-diffusion · gray-scott · f=' + P.feed.toFixed(4) + ' k=' + P.kill.toFixed(4) + ' -->\n' +
+    '  <!-- ' + MODELS[currentModel].label + (currentModel === 'reaction' ? ' · f=' + P.feed.toFixed(4) + ' k=' + P.kill.toFixed(4) : '') + ' -->\n' +
     '  <rect width="100%" height="100%" fill="' + bg + '"/>\n' + paths + '</svg>\n';
-  download(new Blob([svg], { type: 'image/svg+xml' }), 'reaction-diffusion-' + stamp() + '.svg');
+  download(new Blob([svg], { type: 'image/svg+xml' }), fileBase() + '.svg');
 }
-function exportPNG() { render(); canvas.toBlob(b => b && download(b, 'reaction-diffusion-' + stamp() + '.png'), 'image/png'); }
+function exportPNG() { render(); canvas.toBlob(b => b && download(b, fileBase() + '.png'), 'image/png'); }
 
 /* ================================================================
    video export
@@ -1076,7 +1293,7 @@ function toggleRecord() {
   recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
   recorder.onstop = () => {
     const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-    download(new Blob(recChunks, { type: mime }), 'reaction-diffusion-' + stamp() + '.' + ext);
+    download(new Blob(recChunks, { type: mime }), fileBase() + '.' + ext);
     recorder = null; recChunks = [];
     clearInterval(recTimer);
     document.getElementById('recbadge').classList.remove('on');
@@ -1130,7 +1347,7 @@ function render() {
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.useProgram(displayProg.prog);
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, fields[cur].tex);
+  gl.bindTexture(gl.TEXTURE_2D, activeField());
   gl.uniform1i(displayProg.u.u_state, 0);
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, rampTex);
@@ -1146,19 +1363,26 @@ function render() {
 }
 
 function frame() {
-  if (!paused) step();
-  updateBrush();
+  if (!paused) simTime += 0.016;
+  if (currentModel === 'reaction') {
+    if (!paused) step();
+    updateBrush();
+  } else {
+    renderGenerative();
+  }
   render();
   frames++;
   const now = performance.now();
   if (now - lastFpsT > 500) {
     fps = Math.round(frames * 1000 / (now - lastFpsT));
     frames = 0; lastFpsT = now;
+    const detail = currentModel === 'reaction'
+      ? '<span class="k">' + Math.round(fps * P.steps) + '</span> steps/s'
+      : '<span class="k">' + MODELS[currentModel].label + '</span>';
     document.getElementById('status').innerHTML =
       '<span class="k">' + simW + '×' + simH + '</span> field · ' +
-      '<span class="k">' + fps + '</span> fps · ' +
-      '<span class="k">' + Math.round(fps * P.steps) + '</span> steps/s' +
-      (paused ? ' · <span class="paused">paused — draw mode</span>' : '');
+      '<span class="k">' + fps + '</span> fps · ' + detail +
+      (paused ? ' · <span class="paused">paused' + (currentModel === 'reaction' ? ' — draw mode' : '') + '</span>' : '');
   }
   requestAnimationFrame(frame);
 }
@@ -1188,6 +1412,9 @@ function togglePanel() {
 document.getElementById('btn-pause').addEventListener('click', () => setPaused(!paused));
 document.getElementById('btn-seed').addEventListener('click', () => seed(true));
 document.getElementById('btn-clear').addEventListener('click', () => seed(false));
+document.getElementById('btn-generate').addEventListener('click', () => { genSeed = Math.random() * 100; });
+document.getElementById('model').addEventListener('change', e => selectModel(e.target.value));
+function regenerate() { if (currentModel === 'reaction') seed(true); else genSeed = Math.random() * 100; }
 document.getElementById('btn-svg').addEventListener('click', exportSVG);
 document.getElementById('btn-png').addEventListener('click', exportPNG);
 document.getElementById('btn-rec').addEventListener('click', toggleRecord);
@@ -1202,14 +1429,15 @@ window.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   switch (e.key) {
     case ' ': e.preventDefault(); setPaused(!paused); break;
-    case 'r': seed(true); break;
-    case 'c': seed(false); break;
+    case 'r': regenerate(); break;
+    case 'g': regenerate(); break;
+    case 'c': if (currentModel === 'reaction') seed(false); break;
     case '1': selectTool('brush'); break;
     case '2': selectTool('line'); break;
     case '3': selectTool('rect'); break;
     case '4': selectTool('ellipse'); break;
-    case 'e': document.getElementById('btn-erase').click(); break;
-    case 'x': document.getElementById('btn-fill').click(); break;
+    case 'e': if (currentModel === 'reaction') document.getElementById('btn-erase').click(); break;
+    case 'x': if (currentModel === 'reaction') document.getElementById('btn-fill').click(); break;
     case 's': exportPNG(); break;
     case 'v': toggleRecord(); break;
     case 'h': togglePanel(); break;
@@ -1217,10 +1445,11 @@ window.addEventListener('keydown', e => {
 });
 
 /* ---------------- boot ---------------- */
-buildParamUI();
+buildParamRows(RENDER_PARAMS, document.getElementById('params-render'), false);
+buildParamRows(DRAW_PARAMS, document.getElementById('params-brush'), false);
 buildPresets();
 buildPaletteUI();
-refreshMidiButtons();
+selectModel('reaction');
 markPresetCustom();
 initMidi();
 resize();

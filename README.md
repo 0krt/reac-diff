@@ -1,8 +1,24 @@
 # REACTION // DIFFUSION
 
-A Gray–Scott reaction-diffusion field synthesizer in a single dependency-free
-HTML file, in the same dark instrument-panel style as the lissajous app.
-Inspired by [Jason Webb's reaction-diffusion playground](https://jasonwebb.github.io/reaction-diffusion-playground/app.html).
+An organic pattern synthesizer in a single dependency-free HTML file, in the
+same dark instrument-panel style as the lissajous app. The reaction-diffusion
+model is inspired by [Jason Webb's playground](https://jasonwebb.github.io/reaction-diffusion-playground/app.html);
+four more generative models sit alongside it.
+
+## Models
+
+Every model produces a scalar field, so the shading, contour export, and MIDI
+mapping are shared across all of them. Switch models from the panel:
+
+- **Reaction–diffusion** — the dynamic Gray–Scott solver (drawing, bias,
+  presets, SVG import; all described below).
+- **Voronoi cells** — organic cellular partition with cell count, gap,
+  smoothness, jitter, and animated drift.
+- **Marble veins** — domain-warped noise for flowing marble / vein structures.
+- **Metaballs** — merging blobs with adjustable count, size, threshold, motion.
+- **Flow lines** — warped wavefronts for fingerprint / topographic contours.
+
+Generative models have a **Generate** button that reshuffles the random seed.
 
 Open `index.html` in a browser (Chrome or Edge for Web MIDI). No build step, no server needed —
 though MIDI and some export features prefer `https://` or `localhost`, so
