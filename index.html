@@ -6,12 +6,15 @@
 <title>REACTION–DIFFUSION</title>
 <style>
   :root {
+    --control-border: #5c606d;   /* 3.03:1 on panel - WCAG 1.4.11 */
+    --focus: var(--accent);
+
     --bg: #0a0b0e;
     --panel: rgba(16, 18, 23, 0.88);
     --line: rgba(255, 255, 255, 0.08);
     --line-strong: rgba(255, 255, 255, 0.16);
     --ink: #d6dae2;
-    --ink-dim: #7c8494;
+    --ink-dim: #828999;
     --accent: #7ef0c0;
     --accent-dim: rgba(126, 240, 192, 0.35);
     --danger: #ff5d6c;
@@ -30,6 +33,8 @@
     position: fixed; top: 0; left: 0; padding: 18px 22px;
     pointer-events: none; user-select: none; z-index: 5;
   }
+  /* the field runs full-bleed here, so the chrome needs its own contrast */
+  #header, #status { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 14px rgba(0, 0, 0, 0.8); }
   #header h1 { font-size: 13px; font-weight: 600; letter-spacing: 0.35em; color: var(--ink); }
   #header h1 em { font-style: normal; color: var(--accent); }
   #header .sub {
@@ -145,7 +150,7 @@
     color: var(--ink); background: #0d0f13; border: 1px solid var(--line-strong);
     border-radius: 3px; padding: 6px 8px; cursor: pointer; margin-bottom: 10px;
   }
-  select:focus { outline: none; border-color: var(--accent-dim); }
+  select:focus:not(:focus-visible) { outline: none; border-color: var(--accent-dim); }
   .selrow { display: flex; gap: 6px; }
   .selrow select { flex: 1; }
   .sublabel { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim); margin: 2px 0 5px; }
@@ -161,11 +166,77 @@
     position: fixed; inset: 0; display: none; z-index: 100;
     background: var(--bg); color: var(--ink); padding: 40px; font-size: 13px; line-height: 2;
   }
+
+  /* ==================================================================
+     accessibility layer  -  WCAG 2.2 AA
+     ------------------------------------------------------------------
+     focus rings, reduced motion, and a screen-reader-only utility.
+     colours come from the artefact's own palette, so nothing here
+     changes how the piece looks until you tab into it.
+     ================================================================== */
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  /* several base rules zero the ring out; win them back on equal ground */
+  button:focus-visible,
+  select:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  a:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  input[type=range]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 4px;
+  }
+
+  /* 1.4.11 - the boundary of an interactive control must clear 3:1 */
+  button, select, textarea,
+  input[type=text], input[type=number], input[type=search], input[type=range] {
+    border-color: var(--control-border);
+  }
+
+  /* 2.3.3 - honour a reduced-motion preference for all chrome animation */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+
+  /* --- 2.5.8 Target Size (Minimum) - 24x24 CSS px per pointer target ---
+     Labels are associated with their controls, so a checkbox and its text
+     act as one target and are measured together. */
+  button, select,
+  input[type=color], input[type=number], input[type=text], input[type=search] {
+    min-height: 24px;
+  }
+  button { min-width: 24px; }
+  input[type="range"] { min-height: 24px; }
+
+  /* checkbox rows: give the clickable band its full 24px height */
+  .checkbox-row { min-height: 24px; }
+  .checkbox-row label, .lfo-targets label { display: flex; align-items: center; min-height: 24px; }
+  input[type=checkbox], input[type=radio] { min-width: 16px; min-height: 16px; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
-<canvas id="overlay"></canvas>
+<canvas role="img" aria-label="Reaction-diffusion field: two chemicals competing into Turing patterns." id="canvas"></canvas>
+<canvas aria-hidden="true" id="overlay"></canvas>
 
 <div id="header">
   <h1>REACTION<em>&nbsp;//&nbsp;</em>DIFFUSION</h1>
@@ -174,26 +245,26 @@
 
 <div id="recbadge"><span class="dot"></span><span id="rectime">REC 00:00</span></div>
 <div id="status"></div>
-<button id="paneltoggle">☰</button>
+<button id="paneltoggle" aria-label="Show or hide the controls panel" aria-expanded="true" aria-controls="panel">☰</button>
 
 <div id="panel">
   <div class="section">
     <h2>Model <span class="tag" id="model-tag"></span></h2>
-    <select id="model">
+    <select aria-label="Reaction-diffusion model" id="model">
       <option value="reaction" selected>reaction–diffusion</option>
       <option value="voronoi">voronoi cells</option>
       <option value="marble">marble veins</option>
       <option value="metaballs">metaballs</option>
       <option value="stripes">flow lines</option>
     </select>
-    <select id="preset"></select>
+    <select aria-label="Preset" id="preset"></select>
     <div id="params-model"></div>
     <div class="hint" id="model-note"></div>
   </div>
 
   <div class="section" id="sec-sim">
     <div class="sublabel">resolution</div>
-    <select id="simscale">
+    <select aria-label="Simulation resolution" id="simscale">
       <option value="0.25">quarter — fast</option>
       <option value="0.5">half — balanced</option>
       <option value="1" selected>full — detailed</option>
@@ -227,7 +298,7 @@
     <div class="btnrow" style="margin-top:2px">
       <button class="act" id="btn-svgimport">import svg</button>
     </div>
-    <input type="file" id="svgfile" accept=".svg,image/svg+xml" style="display:none">
+    <input aria-label="Import an SVG file to seed the field" type="file" id="svgfile" accept=".svg,image/svg+xml" style="display:none">
     <div class="hint" style="margin-top:10px">
       draw while <b>paused</b> to sketch a seed without running the reaction. shapes: drag to size.
       hold <b>shift</b> to erase. imported svg is stamped as chemical B.
@@ -236,7 +307,7 @@
 
   <div class="section">
     <h2>Rendering</h2>
-    <select id="palette"></select>
+    <select aria-label="Colour palette" id="palette"></select>
     <div id="params-render"></div>
     <div class="btnrow" style="margin-top:4px">
       <button class="act" id="btn-smooth">smooth: on</button>
@@ -258,14 +329,14 @@
     <h2>Export</h2>
     <div class="sublabel">svg contour levels</div>
     <div class="selrow">
-      <select id="svglevels">
+      <select aria-label="SVG contour levels" id="svglevels">
         <option value="1">1 level</option>
         <option value="2">2 levels</option>
         <option value="3" selected>3 levels</option>
         <option value="4">4 levels</option>
         <option value="6">6 levels</option>
       </select>
-      <select id="svgstyle">
+      <select aria-label="SVG contour style" id="svgstyle">
         <option value="dark" selected>dark / ink</option>
         <option value="plotter">plotter / white</option>
       </select>
@@ -291,7 +362,7 @@
   </div>
 </div>
 
-<div id="err"></div>
+<div id="err" role="alert" aria-live="assertive"></div>
 
 <script>
 'use strict';
@@ -744,9 +815,9 @@ function buildParamRows(list, container, clear) {
     const wrap = document.createElement('div');
     wrap.className = 'param';
     wrap.innerHTML =
-      '<div class="row1"><label>' + d.label + '</label><span class="val" id="val-' + d.id + '"></span></div>' +
+      '<div class="row1"><label for="in-' + d.id + '">' + d.label + '</label><span class="val" id="val-' + d.id + '"></span></div>' +
       '<div class="row2">' +
-      '<input type="range" id="in-' + d.id + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + P[d.id] + '">' +
+      '<input type="range" id="in-' + d.id + '" aria-describedby="val-' + d.id + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + P[d.id] + '">' +
       '<button class="midibtn" id="midi-' + d.id + '" title="midi learn">m</button></div>';
     container.appendChild(wrap);
     const input = wrap.querySelector('input');
@@ -1455,5 +1526,86 @@ initMidi();
 resize();
 requestAnimationFrame(frame);
 </script>
+<script>
+/* ==================================================================
+   accessibility shim  -  WCAG 2.2 AA
+   ------------------------------------------------------------------
+   These artefacts carry state in CSS classes, which assistive tech
+   cannot see. Rather than thread ARIA through every handler, this
+   mirrors the state that already exists onto the accessibility tree
+   and keeps it in sync. It changes nothing visually.
+   ================================================================== */
+(function () {
+  'use strict';
+
+  /* --- 4.1.2  a button that carries `.active` is a toggle ---------- */
+  function isToggle(b) {
+    return b.tagName === 'BUTTON' &&
+           (b.classList.contains('active') ||
+            (b.parentElement && b.parentElement.querySelector(':scope > button.active')));
+  }
+  function syncPressed(b) {
+    if (!isToggle(b) && !b.hasAttribute('aria-pressed')) return;
+    b.setAttribute('aria-pressed', b.classList.contains('active') ? 'true' : 'false');
+  }
+
+  /* --- 4.1.2  panel visibility lives in a class, so mirror it ------ */
+  var panel  = document.getElementById('panel');
+  var toggle = document.getElementById('paneltoggle');
+  function syncPanel() {
+    if (!panel || !toggle) return;
+    var open = !panel.classList.contains('hidden');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // 2.4.3 - a panel slid off-screen must not stay in the tab order
+    if (open) panel.removeAttribute('inert');
+    else panel.setAttribute('inert', '');
+  }
+
+  /* --- 1.3.1  the readout beside a slider is its value ------------- */
+  function syncValue(span) {
+    var id = span.id && span.id.indexOf('val-') === 0 ? span.id.slice(4) : null;
+    if (!id) return;
+    var inp = document.getElementById('in-' + id);
+    if (inp) inp.setAttribute('aria-valuetext', span.textContent.trim());
+  }
+
+  function initialPass() {
+    document.querySelectorAll('button').forEach(syncPressed);
+    document.querySelectorAll('span.val[id^="val-"]').forEach(syncValue);
+    syncPanel();
+  }
+
+  var obs = new MutationObserver(function (records) {
+    records.forEach(function (r) {
+      if (r.type === 'attributes' && r.target.tagName === 'BUTTON') syncPressed(r.target);
+      else if (r.type === 'attributes' && r.target === panel) syncPanel();
+      else if (r.type === 'childList' || r.type === 'characterData') {
+        var t = r.target.nodeType === 3 ? r.target.parentElement : r.target;
+        if (t && t.classList && t.classList.contains('val')) syncValue(t);
+        if (r.type === 'childList') {
+          r.addedNodes.forEach(function (n) {
+            if (n.nodeType !== 1) return;
+            if (n.tagName === 'BUTTON') syncPressed(n);
+            n.querySelectorAll && n.querySelectorAll('button').forEach(syncPressed);
+            n.querySelectorAll && n.querySelectorAll('span.val[id^="val-"]').forEach(syncValue);
+          });
+        }
+      }
+    });
+  });
+
+  function start() {
+    initialPass();
+    obs.observe(document.body, {
+      subtree: true, childList: true, characterData: true,
+      attributes: true, attributeFilter: ['class']
+    });
+  }
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+</script>
+
 </body>
 </html>
