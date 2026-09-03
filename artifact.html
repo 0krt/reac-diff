@@ -1,11 +1,14 @@
 <style>
   :root {
+    --control-border: #5c606d;   /* 3.03:1 on panel - WCAG 1.4.11 */
+    --focus: var(--accent);
+
     --bg: #0a0b0e;
     --panel: rgba(16, 18, 23, 0.88);
     --line: rgba(255, 255, 255, 0.08);
     --line-strong: rgba(255, 255, 255, 0.16);
     --ink: #d6dae2;
-    --ink-dim: #7c8494;
+    --ink-dim: #828999;
     --accent: #7ef0c0;
     --accent-dim: rgba(126, 240, 192, 0.35);
     --danger: #ff5d6c;
@@ -24,6 +27,8 @@
     position: fixed; top: 0; left: 0; padding: 18px 22px;
     pointer-events: none; user-select: none; z-index: 5;
   }
+  /* the field runs full-bleed here, so the chrome needs its own contrast */
+  #header, #status { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 14px rgba(0, 0, 0, 0.8); }
   #header h1 { font-size: 13px; font-weight: 600; letter-spacing: 0.35em; color: var(--ink); }
   #header h1 em { font-style: normal; color: var(--accent); }
   #header .sub {
@@ -139,7 +144,7 @@
     color: var(--ink); background: #0d0f13; border: 1px solid var(--line-strong);
     border-radius: 3px; padding: 6px 8px; cursor: pointer; margin-bottom: 10px;
   }
-  select:focus { outline: none; border-color: var(--accent-dim); }
+  select:focus:not(:focus-visible) { outline: none; border-color: var(--accent-dim); }
   .selrow { display: flex; gap: 6px; }
   .selrow select { flex: 1; }
   .sublabel { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim); margin: 2px 0 5px; }
@@ -155,9 +160,75 @@
     position: fixed; inset: 0; display: none; z-index: 100;
     background: var(--bg); color: var(--ink); padding: 40px; font-size: 13px; line-height: 2;
   }
+
+  /* ==================================================================
+     accessibility layer  -  WCAG 2.2 AA
+     ------------------------------------------------------------------
+     focus rings, reduced motion, and a screen-reader-only utility.
+     colours come from the artefact's own palette, so nothing here
+     changes how the piece looks until you tab into it.
+     ================================================================== */
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  /* several base rules zero the ring out; win them back on equal ground */
+  button:focus-visible,
+  select:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  a:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  input[type=range]:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 4px;
+  }
+
+  /* 1.4.11 - the boundary of an interactive control must clear 3:1 */
+  button, select, textarea,
+  input[type=text], input[type=number], input[type=search], input[type=range] {
+    border-color: var(--control-border);
+  }
+
+  /* 2.3.3 - honour a reduced-motion preference for all chrome animation */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+
+  /* --- 2.5.8 Target Size (Minimum) - 24x24 CSS px per pointer target ---
+     Labels are associated with their controls, so a checkbox and its text
+     act as one target and are measured together. */
+  button, select,
+  input[type=color], input[type=number], input[type=text], input[type=search] {
+    min-height: 24px;
+  }
+  button { min-width: 24px; }
+  input[type="range"] { min-height: 24px; }
+
+  /* checkbox rows: give the clickable band its full 24px height */
+  .checkbox-row { min-height: 24px; }
+  .checkbox-row label, .lfo-targets label { display: flex; align-items: center; min-height: 24px; }
+  input[type=checkbox], input[type=radio] { min-width: 16px; min-height: 16px; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
 </style>
-<canvas id="canvas"></canvas>
-<canvas id="overlay"></canvas>
+<canvas role="img" aria-label="Reaction-diffusion field: two chemicals competing into Turing patterns." id="canvas"></canvas>
+<canvas aria-hidden="true" id="overlay"></canvas>
 
 <div id="header">
   <h1>REACTION<em>&nbsp;//&nbsp;</em>DIFFUSION</h1>
@@ -166,26 +237,26 @@
 
 <div id="recbadge"><span class="dot"></span><span id="rectime">REC 00:00</span></div>
 <div id="status"></div>
-<button id="paneltoggle">☰</button>
+<button id="paneltoggle" aria-label="Show or hide the controls panel" aria-expanded="true" aria-controls="panel">☰</button>
 
 <div id="panel">
   <div class="section">
     <h2>Model <span class="tag" id="model-tag"></span></h2>
-    <select id="model">
+    <select aria-label="Reaction-diffusion model" id="model">
       <option value="reaction" selected>reaction–diffusion</option>
       <option value="voronoi">voronoi cells</option>
       <option value="marble">marble veins</option>
       <option value="metaballs">metaballs</option>
       <option value="stripes">flow lines</option>
     </select>
-    <select id="preset"></select>
+    <select aria-label="Preset" id="preset"></select>
     <div id="params-model"></div>
     <div class="hint" id="model-note"></div>
   </div>
 
   <div class="section" id="sec-sim">
     <div class="sublabel">resolution</div>
-    <select id="simscale">
+    <select aria-label="Simulation resolution" id="simscale">
       <option value="0.25">quarter — fast</option>
       <option value="0.5">half — balanced</option>
       <option value="1" selected>full — detailed</option>
@@ -219,16 +290,45 @@
     <div class="btnrow" style="margin-top:2px">
       <button class="act" id="btn-svgimport">import svg</button>
     </div>
-    <input type="file" id="svgfile" accept=".svg,image/svg+xml" style="display:none">
+    <input aria-label="Import an SVG file to seed the field" type="file" id="svgfile" accept=".svg,image/svg+xml" style="display:none">
     <div class="hint" style="margin-top:10px">
       draw while <b>paused</b> to sketch a seed without running the reaction. shapes: drag to size.
       hold <b>shift</b> to erase. imported svg is stamped as chemical B.
     </div>
   </div>
 
+  <div class="section" id="sec-project">
+    <h2>3D Projection</h2>
+    <div class="btnrow" style="margin-bottom:10px">
+      <button class="act" id="btn-project">projection: off</button>
+    </div>
+    <div id="proj-body" style="display:none">
+      <div class="sublabel">object</div>
+      <select aria-label="Projection object" id="projshape">
+        <option value="sphere" selected>sphere</option>
+        <option value="torus">torus</option>
+        <option value="hyperboloid">hyperboloid</option>
+        <option value="cylinder">cylinder</option>
+        <option value="cone">cone</option>
+        <option value="knot">torus knot</option>
+      </select>
+      <div class="sublabel">surface</div>
+      <select aria-label="Projection surface style" id="projmode">
+        <option value="both" selected>shaded + wireframe</option>
+        <option value="shaded">shaded</option>
+        <option value="wire">wireframe</option>
+      </select>
+      <div id="params-project"></div>
+      <div class="hint" style="margin-top:10px">
+        <b>drag</b> to orbit · <b>wheel</b> to zoom · <b>o</b> toggles. the pattern keeps
+        running underneath, so the projection is live.
+      </div>
+    </div>
+  </div>
+
   <div class="section">
     <h2>Rendering</h2>
-    <select id="palette"></select>
+    <select aria-label="Colour palette" id="palette"></select>
     <div id="params-render"></div>
     <div class="btnrow" style="margin-top:4px">
       <button class="act" id="btn-smooth">smooth: on</button>
@@ -250,14 +350,14 @@
     <h2>Export</h2>
     <div class="sublabel">svg contour levels</div>
     <div class="selrow">
-      <select id="svglevels">
+      <select aria-label="SVG contour levels" id="svglevels">
         <option value="1">1 level</option>
         <option value="2">2 levels</option>
         <option value="3" selected>3 levels</option>
         <option value="4">4 levels</option>
         <option value="6">6 levels</option>
       </select>
-      <select id="svgstyle">
+      <select aria-label="SVG contour style" id="svgstyle">
         <option value="dark" selected>dark / ink</option>
         <option value="plotter">plotter / white</option>
       </select>
@@ -278,12 +378,12 @@
     <h2>Keys</h2>
     <div class="hint">
       <b>space</b> pause · <b>g</b> generate / reseed · <b>c</b> clear · <b>1–4</b> tools<br>
-      <b>e</b> erase · <b>x</b> fill · <b>s</b> png · <b>v</b> record · <b>h</b> panel
+      <b>e</b> erase · <b>x</b> fill · <b>o</b> 3d projection · <b>s</b> png · <b>v</b> record · <b>h</b> panel
     </div>
   </div>
 </div>
 
-<div id="err"></div>
+<div id="err" role="alert" aria-live="assertive"></div>
 
 <script>
 'use strict';
@@ -479,8 +579,22 @@ void main() { float B = texture(u_state, v_uv).g; outColor = vec4(B, B, B, 1.0);
 
 /* ---- generative models: each writes a scalar field into .g ---- */
 const NOISE = `
-float hash1(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-vec2  hash2(vec2 p){ return vec2(hash1(p), hash1(p + 19.19)); }
+// the usual fract(p.x * p.y) hash correlates hard on an integer lattice: the
+// two components of hash2 came out of the same function shifted by a constant,
+// so neighbouring cells got near-identical offsets and their sites lined up.
+// in a voronoi that reads as rows of collinear sites — straight borders running
+// through the middle of the pattern. these are Hoskins hashes: same cost,
+// properly decorrelated in x and y.
+float hash1(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+vec2 hash2(vec2 p){
+  vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.xx + p3.yz) * p3.zy);
+}
 float vnoise(vec2 p){
   vec2 i = floor(p), f = fract(p);
   vec2 u = f * f * (3.0 - 2.0 * f);
@@ -498,28 +612,47 @@ precision highp float;
 ${NOISE}
 uniform vec2 u_res; uniform float u_time, u_seed, u_count, u_gap, u_smooth, u_jitter, u_drift;
 in vec2 v_uv; out vec4 outColor;
+
+// a cell's site, in lattice space. the offset is a stable per-cell hash, so a
+// cell keeps its identity; drift moves each site on its own small orbit with an
+// independent phase, so the sites never sweep through a common alignment.
+// total excursion stays under 0.68 of a cell, which the 5x5 search below covers.
+vec2 site(vec2 cell) {
+  vec2 h  = hash2(cell + vec2(u_seed, u_seed * 1.7 + 3.3));
+  vec2 ph = hash2(cell + vec2(u_seed * 0.31 + 71.7, 19.3));
+  vec2 o = vec2(0.5) + (h - 0.5) * u_jitter;
+  o += 0.18 * u_jitter * vec2(sin(u_time * u_drift + 6.2831 * ph.x),
+                              sin(u_time * u_drift * 0.87 + 6.2831 * ph.y));
+  return o;
+}
+
 void main() {
   vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
   vec2 p = v_uv * aspect * u_count;
   vec2 n = floor(p), f = fract(p);
+
+  // f1 over 5x5, not 3x3: with sites free to sit near a cell edge the 3x3
+  // window can miss the true nearest one, and a wrong f1 draws a straight
+  // segment where the real border should curve.
   vec2 mr = vec2(0.0), mg = vec2(0.0); float md = 8.0;
-  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+  for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
     vec2 g = vec2(float(i), float(j));
-    vec2 o = hash2(n + g + vec2(u_seed)) * u_jitter;
-    o = 0.5 + 0.5 * sin(u_time * u_drift + 6.2831 * o);
-    vec2 r = g + o - f;
+    vec2 r = g + site(n + g) - f;
     float d = dot(r, r);
     if (d < md) { md = d; mr = r; mg = g; }
   }
+
+  // distance to the nearest border: half way to each neighbouring site,
+  // measured along the line joining them.
   float border = 8.0;
   for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
     vec2 g = mg + vec2(float(i), float(j));
-    vec2 o = hash2(n + g + vec2(u_seed)) * u_jitter;
-    o = 0.5 + 0.5 * sin(u_time * u_drift + 6.2831 * o);
-    vec2 r = g + o - f;
+    vec2 r = g + site(n + g) - f;
     vec2 diff = r - mr;
-    if (dot(diff, diff) > 1e-4) border = min(border, dot(0.5 * (mr + r), normalize(diff)));
+    float dd = dot(diff, diff);
+    if (dd > 1e-5) border = min(border, dot(0.5 * (mr + r), diff * inversesqrt(dd)));
   }
+
   float cell = smoothstep(u_gap, u_gap + u_smooth + 0.001, border);
   outColor = vec4(vec3(cell), 1.0);
 }`;
@@ -543,23 +676,59 @@ void main() {
 
 const METABALLS_FRAG = `#version 300 es
 precision highp float;
-${NOISE}
-uniform vec2 u_res; uniform float u_time, u_seed, u_count, u_radius, u_threshold, u_speed;
+uniform vec2  u_res;
+uniform vec4  u_balls[32];   // xyz centre, w radius — animated on the cpu
+uniform vec4  u_bound;       // bounding sphere of the whole cluster
+uniform vec3  u_camPos;
+uniform mat3  u_camBasis;    // columns: right, up, forward
+uniform float u_count, u_fusion, u_fov;
 in vec2 v_uv; out vec4 outColor;
-void main() {
-  vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
-  vec2 uv = v_uv * aspect;
-  int N = int(u_count);
-  float field = 0.0;
+
+float smin(float a, float b, float k) {
+  if (k <= 0.0001) return min(a, b);
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+float map(vec3 p) {
+  int n = int(u_count);
+  float d = 1e6;
   for (int i = 0; i < 32; i++) {
-    if (i >= N) break;
-    vec2 s = hash2(vec2(float(i) * 3.1 + u_seed, 7.0));
-    vec2 c = 0.5 * aspect + (aspect * 0.5 - 0.08) * sin(u_time * u_speed * (0.4 + s.x) + 6.2831 * s + vec2(0.0, 1.5708));
-    float d = distance(uv, c);
-    field += (u_radius * u_radius) / (d * d + 1e-4);
+    if (i >= n) break;
+    d = smin(d, length(p - u_balls[i].xyz) - u_balls[i].w, u_fusion);
   }
-  float v = smoothstep(u_threshold * 0.8, u_threshold * 1.2, field);
-  outColor = vec4(vec3(v), 1.0);
+  return d;
+}
+// entry / exit of the cluster bounding sphere, so background pixels never march
+vec2 boundSpan(vec3 ro, vec3 rd) {
+  vec3 oc = ro - u_bound.xyz;
+  float b = dot(oc, rd), c = dot(oc, oc) - u_bound.w * u_bound.w;
+  float h = b * b - c;
+  if (h < 0.0) return vec2(-1.0);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
+void main() {
+  vec2 ndc = (v_uv * 2.0 - 1.0) * vec2(u_res.x / u_res.y, 1.0);
+  vec3 rd = normalize(u_camBasis * vec3(ndc * u_fov, 1.0));
+  vec2 span = boundSpan(u_camPos, rd);
+  if (span.y < 0.0) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  float t0 = max(span.x, 0.0), t = t0, hit = -1.0;
+  for (int i = 0; i < 112; i++) {
+    float d = map(u_camPos + rd * t);
+    // land on the surface rather than on the last step: the display pass
+    // differentiates this depth, so step-sized quantisation would show up as
+    // onion rings across every blob.
+    if (d < 0.0012) { hit = t + d; break; }
+    t += max(d * 0.85, 0.0006);
+    if (t > span.y) break;
+  }
+  if (hit < 0.0) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  // the field is the surface seen from the camera as a height map — near the
+  // camera is high. the display pass differentiates it, so its relief and
+  // specular land on the actual metaball surface, and the svg contour export
+  // traces iso-depth lines across the blobs.
+  float depth = clamp(1.0 - (hit - t0) / max(1.6 * u_bound.w, 1e-3), 0.0, 1.0);
+  outColor = vec4(vec3(0.12 + 0.88 * depth), 1.0);
 }`;
 
 const STRIPES_FRAG = `#version 300 es
@@ -584,15 +753,19 @@ function compile(type, src) {
   if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) fatal('shader error: ' + gl.getShaderInfoLog(s));
   return s;
 }
-function program(frag) {
+function program(frag, vert) {
   const p = gl.createProgram();
-  gl.attachShader(p, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vert || VERT));
   gl.attachShader(p, compile(gl.FRAGMENT_SHADER, frag));
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) fatal('link error: ' + gl.getProgramInfoLog(p));
   const u = {};
   const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
-  for (let i = 0; i < n; i++) { const info = gl.getActiveUniform(p, i); u[info.name] = gl.getUniformLocation(p, info.name); }
+  for (let i = 0; i < n; i++) {
+    const info = gl.getActiveUniform(p, i);
+    u[info.name] = gl.getUniformLocation(p, info.name);
+    if (info.name.endsWith('[0]')) u[info.name.slice(0, -3)] = u[info.name];
+  }
   return { prog: p, u };
 }
 
@@ -646,7 +819,7 @@ function allocSim(preserve) {
   simW = w; simH = h;
   fields = [makeField(w, h), makeField(w, h)];
   if (genField) { gl.deleteTexture(genField.tex); gl.deleteFramebuffer(genField.fbo); }
-  genField = makeTex(w, h, genInternalFormat, gl.CLAMP_TO_EDGE);
+  genField = makeTex(w, h, genInternalFormat, gl.REPEAT);
   cur = 0;
   gl.bindVertexArray(vao);
   gl.viewport(0, 0, simW, simH);
@@ -678,7 +851,7 @@ function seed(random) {
 const P = {};
 const RENDER_PARAMS = [
   { id: 'colLo',  label: 'level low',     min: 0.00,  max: 0.40,  step: 0.001,  value: 0.05,   dp: 3 },
-  { id: 'colHi',  label: 'level high',    min: 0.05,  max: 0.80,  step: 0.001,  value: 0.34,   dp: 3 },
+  { id: 'colHi',  label: 'level high',    min: 0.05,  max: 1.00,  step: 0.001,  value: 0.34,   dp: 3 },
   { id: 'relief', label: 'relief',        min: 0.00,  max: 1.00,  step: 0.01,   value: 0.45,   dp: 2 },
   { id: 'shine',  label: 'specular',      min: 0.00,  max: 0.80,  step: 0.01,   value: 0.30,   dp: 2 },
   { id: 'light',  label: 'light angle',   min: 0,     max: 360,   step: 1,      value: 135,    dp: 0 },
@@ -686,6 +859,14 @@ const RENDER_PARAMS = [
 const DRAW_PARAMS = [
   { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0 },
   { id: 'stab',   label: 'stabilizer',    min: 0.00,  max: 0.92,  step: 0.01,   value: 0.55,   dp: 2 },
+];
+const PROJECT_PARAMS = [
+  { id: 'pr_dist', label: 'camera dist',   min: 1.4,  max: 8.0,  step: 0.01, value: 3.40, dp: 2 },
+  { id: 'pr_spin', label: 'auto orbit',    min: 0.00, max: 1.00, step: 0.01, value: 0.12, dp: 2 },
+  { id: 'pr_tile', label: 'pattern tiling',min: 0.5,  max: 6.0,  step: 0.1,  value: 1.0,  dp: 1 },
+  { id: 'pr_disp', label: 'displacement',  min: 0.00, max: 0.35, step: 0.005, value: 0.04, dp: 3 },
+  { id: 'pr_dens', label: 'mesh density',  min: 16,   max: 200,  step: 4,    value: 96,   dp: 0 },
+  { id: 'pr_wire', label: 'wire lines',    min: 4,    max: 64,   step: 1,    value: 22,   dp: 0 },
 ];
 const MODEL_PARAMS = {
   reaction: [
@@ -713,10 +894,11 @@ const MODEL_PARAMS = {
     { id: 'mar_flow',     label: 'flow',     min: 0.0, max: 2.0,  step: 0.01, value: 0.3, dp: 2 },
   ],
   metaballs: [
-    { id: 'mb_count',     label: 'blob count', min: 2,    max: 32,   step: 1,    value: 12,   dp: 0 },
-    { id: 'mb_radius',    label: 'blob size',  min: 0.02, max: 0.24, step: 0.005,value: 0.10, dp: 3 },
-    { id: 'mb_threshold', label: 'threshold',  min: 0.2,  max: 3.0,  step: 0.01, value: 1.0,  dp: 2 },
-    { id: 'mb_speed',     label: 'motion',     min: 0.0,  max: 2.0,  step: 0.01, value: 0.6,  dp: 2 },
+    { id: 'mb_count',  label: 'blob count', min: 2,    max: 32,   step: 1,    value: 9,    dp: 0 },
+    { id: 'mb_radius', label: 'blob size',  min: 0.05, max: 0.60, step: 0.005, value: 0.26, dp: 3 },
+    { id: 'mb_fusion', label: 'fusion',     min: 0.00, max: 0.60, step: 0.005, value: 0.18, dp: 3 },
+    { id: 'mb_spread', label: 'spread',     min: 0.10, max: 1.40, step: 0.01, value: 0.70, dp: 2 },
+    { id: 'mb_speed',  label: 'motion',     min: 0.0,  max: 2.0,  step: 0.01, value: 0.5,  dp: 2 },
   ],
   stripes: [
     { id: 'st_freq',   label: 'frequency', min: 1.0, max: 14.0, step: 0.1,  value: 6.0, dp: 1 },
@@ -727,7 +909,7 @@ const MODEL_PARAMS = {
   ],
 };
 const paramById = {};
-[RENDER_PARAMS, DRAW_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
+[RENDER_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
   list.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; }));
 
 function buildParamRows(list, container, clear) {
@@ -736,9 +918,9 @@ function buildParamRows(list, container, clear) {
     const wrap = document.createElement('div');
     wrap.className = 'param';
     wrap.innerHTML =
-      '<div class="row1"><label>' + d.label + '</label><span class="val" id="val-' + d.id + '"></span></div>' +
+      '<div class="row1"><label for="in-' + d.id + '">' + d.label + '</label><span class="val" id="val-' + d.id + '"></span></div>' +
       '<div class="row2">' +
-      '<input type="range" id="in-' + d.id + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + P[d.id] + '">' +
+      '<input type="range" id="in-' + d.id + '" aria-describedby="val-' + d.id + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + P[d.id] + '">' +
       '<button class="midibtn" id="midi-' + d.id + '" title="midi learn">m</button></div>';
     container.appendChild(wrap);
     const input = wrap.querySelector('input');
@@ -758,6 +940,9 @@ function setParam(id, value, updateSlider = true) {
   if (updateSlider && slider) slider.value = value;
   refreshParamUI(id);
   if (id === 'feed' || id === 'kill') { markPresetCustom(); updateModelTag(); }
+  if (updateSlider === false && RENDER_PARAMS.some(r => r.id === id)) modelRenderTouched[id] = true;
+  if (id === 'pr_dens' || id === 'pr_wire') rebuildObject();
+  if (id === 'pr_dist') orbit.dist = value;
 }
 function refreshParamUI(id) {
   const d = paramById[id];
@@ -846,6 +1031,63 @@ function buildPaletteUI() {
 let currentModel = 'reaction';
 let simTime = 0, genSeed = Math.random() * 100;
 
+/* ---------------- shared orbit camera ----------------
+   one orientation drives everything three-dimensional: the metaball
+   raymarcher and the object the field is projected onto. drag the canvas to
+   turn it, wheel to pull the camera in and out. ---------------------------- */
+const orbit = { yaw: 0.65, pitch: -0.28, dist: 3.40, dragging: false, last: [0, 0] };
+
+const v3sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const v3cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const v3dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const v3len = a => Math.hypot(a[0], a[1], a[2]);
+function v3norm(a) { const l = v3len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+
+function eyeAt(yaw, pitch, dist) {
+  const cp = Math.cos(pitch);
+  return [dist * cp * Math.sin(yaw), dist * Math.sin(pitch), dist * cp * Math.cos(yaw)];
+}
+const orbitEye = dist => eyeAt(orbit.yaw, orbit.pitch, dist);
+/* when the field is being projected, the drag belongs to the object — the
+   metaball camera holds still so its image stays a stable texture. */
+const MB_VIEW = [0.65, -0.28, 3.4];
+function orbitBasis(eye) {
+  const fwd = v3norm([-eye[0], -eye[1], -eye[2]]);
+  const right = v3norm(v3cross(fwd, [0, 1, 0]));
+  const up = v3cross(right, fwd);
+  return [right[0], right[1], right[2], up[0], up[1], up[2], fwd[0], fwd[1], fwd[2]];
+}
+/* the orbit is live whenever something 3d is on screen */
+const orbitActive = () => project.on || currentModel === 'metaballs';
+
+/* ---------------- metaball cluster (cpu-side) ----------------
+   positions live in a uniform array rather than in the shader: the raymarch
+   evaluates the sdf tens of times per pixel, so the inner loop has to stay a
+   plain length() per blob. ------------------------------------------------- */
+const MB_MAX = 32;
+const mbBalls = new Float32Array(MB_MAX * 4);
+let mbBound = [0, 0, 0, 1];
+
+function mbRand(i, k) {
+  const x = Math.sin(i * 127.1 + k * 311.7 + genSeed * 13.37) * 43758.5453;
+  return x - Math.floor(x);
+}
+function updateMetaballs() {
+  const n = Math.min(MB_MAX, Math.round(P.mb_count));
+  const t = simTime * P.mb_speed;
+  let reach = 0.001;
+  for (let i = 0; i < n; i++) {
+    const amp = P.mb_spread * (0.35 + 0.65 * mbRand(i, 6));
+    const x = amp * Math.sin(t * (0.55 + 0.9 * mbRand(i, 3)) + 6.2831 * mbRand(i, 0));
+    const y = amp * 0.8 * Math.sin(t * (0.55 + 0.9 * mbRand(i, 4)) + 6.2831 * mbRand(i, 1));
+    const z = amp * Math.sin(t * (0.55 + 0.9 * mbRand(i, 5)) + 6.2831 * mbRand(i, 2));
+    const r = P.mb_radius * (0.6 + 0.75 * mbRand(i, 7));
+    mbBalls[i * 4] = x; mbBalls[i * 4 + 1] = y; mbBalls[i * 4 + 2] = z; mbBalls[i * 4 + 3] = r;
+    reach = Math.max(reach, Math.hypot(x, y, z) + r);
+  }
+  mbBound = [0, 0, 0, reach + P.mb_fusion + 0.05];
+}
+
 const MODELS = {
   reaction:  { label: 'reaction–diffusion', generative: false },
   voronoi:   { label: 'voronoi cells',  generative: true, program: () => voronoiProg,
@@ -856,10 +1098,21 @@ const MODELS = {
     note: 'domain-warped noise — flowing marble and vein structures.',
     set(u) { gl.uniform1f(u.u_scale, P.mar_scale); gl.uniform1f(u.u_warp, P.mar_warp);
       gl.uniform1f(u.u_detail, P.mar_detail); gl.uniform1f(u.u_contrast, P.mar_contrast); gl.uniform1f(u.u_flow, P.mar_flow); } },
-  metaballs: { label: 'metaballs',      generative: true, program: () => metaballProg,
-    note: 'merging blobs — raise motion for a lava-lamp flow.',
-    set(u) { gl.uniform1f(u.u_count, P.mb_count); gl.uniform1f(u.u_radius, P.mb_radius);
-      gl.uniform1f(u.u_threshold, P.mb_threshold); gl.uniform1f(u.u_speed, P.mb_speed); } },
+  metaballs: { label: 'metaballs 3d',   generative: true, program: () => metaballProg,
+    note: 'raymarched 3-d blobs — drag the canvas to orbit them, wheel to zoom. ' +
+          'the field is their surface depth, so relief and contour export follow the real geometry.',
+    render: { colLo: 0.02, colHi: 0.98, relief: 0.30 },
+    set(u) {
+      updateMetaballs();
+      const eye = project.on ? eyeAt(MB_VIEW[0], MB_VIEW[1], MB_VIEW[2]) : orbitEye(orbit.dist);
+      gl.uniform4fv(u.u_balls, mbBalls);
+      gl.uniform4f(u.u_bound, mbBound[0], mbBound[1], mbBound[2], mbBound[3]);
+      gl.uniform3f(u.u_camPos, eye[0], eye[1], eye[2]);
+      gl.uniformMatrix3fv(u.u_camBasis, false, orbitBasis(eye));
+      gl.uniform1f(u.u_count, Math.min(MB_MAX, P.mb_count));
+      gl.uniform1f(u.u_fusion, P.mb_fusion);
+      gl.uniform1f(u.u_fov, Math.tan(0.42));
+    } },
   stripes:   { label: 'flow lines',     generative: true, program: () => stripesProg,
     note: 'warped wavefronts — fingerprint and topographic contours.',
     set(u) { gl.uniform1f(u.u_freq, P.st_freq); gl.uniform1f(u.u_warp, P.st_warp);
@@ -881,12 +1134,26 @@ function renderGenerative() {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
+/* a model whose field carries a specific meaning (metaball surface depth) wants
+   its own level window. borrow the render params on the way in and hand them
+   back on the way out — unless the user has since dialled them in by hand. */
+let modelRenderTouched = {}, renderBorrowed = null;
+function applyModelRender(m) {
+  if (renderBorrowed) {
+    for (const k in renderBorrowed) if (!modelRenderTouched[k]) setParam(k, renderBorrowed[k]);
+    renderBorrowed = null;
+  }
+  if (!m.render) return;
+  renderBorrowed = {};
+  for (const k in m.render) if (!modelRenderTouched[k]) { renderBorrowed[k] = P[k]; setParam(k, m.render[k]); }
+}
 function selectModel(name) {
   currentModel = name;
   const m = MODELS[name];
+  applyModelRender(m);
   buildParamRows(MODEL_PARAMS[name], document.getElementById('params-model'), true);
   document.getElementById('preset').style.display = name === 'reaction' ? '' : 'none';
-  document.getElementById('sec-draw').style.display = name === 'reaction' ? '' : 'none';
+  document.getElementById('sec-draw').style.display = (name === 'reaction' && !project.on) ? '' : 'none';
   document.getElementById('row-reaction').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('row-generative').style.display = name === 'reaction' ? 'none' : '';
   document.getElementById('model-note').textContent = m.generative ? m.note : '';
@@ -895,6 +1162,302 @@ function selectModel(name) {
     name === 'reaction' ? 'gray–scott reaction–diffusion' : m.label;
   updateModelTag();
   refreshMidiButtons();
+  updateCursor();
+}
+
+/* ================================================================
+   3-d projection — the live field is mapped onto an orbiting object.
+   the mesh is parametric, so one builder covers every shape, and the
+   fragment shader reads the same field texture the 2-d display reads.
+   ================================================================ */
+const OBJ_VERT = `#version 300 es
+layout(location=0) in vec3 a_pos;
+layout(location=1) in vec3 a_nrm;
+layout(location=2) in vec2 a_uv;
+uniform mat4 u_proj, u_view;
+uniform sampler2D u_state;
+uniform float u_disp, u_tile;
+out vec3 v_pos; out vec3 v_nrm; out vec2 v_uv;
+void main() {
+  vec2 uv = a_uv * u_tile;
+  float h = texture(u_state, uv).g;          // field displaces the surface
+  vec4 vp = u_view * vec4(a_pos + a_nrm * (h * u_disp), 1.0);
+  v_pos = vp.xyz;
+  v_nrm = mat3(u_view) * a_nrm;
+  v_uv = uv;
+  gl_Position = u_proj * vp;
+}`;
+
+const OBJ_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+uniform sampler2D u_ramp;
+uniform vec2  u_texel, u_light;
+uniform float u_lo, u_hi, u_relief, u_shine, u_smooth, u_wire;
+in vec3 v_pos; in vec3 v_nrm; in vec2 v_uv;
+out vec4 outColor;
+float rawB(vec2 uv) { return texture(u_state, uv).g; }
+float sampleB(vec2 uv) {
+  if (u_smooth < 0.5) return rawB(uv);
+  vec2 res = 1.0 / u_texel;
+  vec2 p = uv * res - 0.5;
+  vec2 i = floor(p), f = p - i;
+  vec2 t = (i + 0.5) * u_texel;
+  float b00 = rawB(t), b10 = rawB(t + vec2(u_texel.x, 0.0));
+  float b01 = rawB(t + vec2(0.0, u_texel.y)), b11 = rawB(t + u_texel);
+  return mix(mix(b00, b10, f.x), mix(b01, b11, f.x), f.y);
+}
+void main() {
+  float B = sampleB(v_uv);
+  float t = smoothstep(u_lo, u_hi, B);
+  vec3 col = texture(u_ramp, vec2(t, 0.5)).rgb;
+  // wire: lines take the palette colour where the field is strong, and fall
+  // back to neutral ink where it is empty, so the mesh always reads.
+  if (u_wire > 0.5) {
+    vec3 w = mix(vec3(0.34, 0.36, 0.40), col, 0.45 + 0.55 * t);
+    outColor = vec4(clamp(w + 0.12 * t, 0.0, 1.0), 1.0);
+    return;
+  }
+
+  vec3 N = normalize(v_nrm);
+  if (!gl_FrontFacing) N = -N;
+  // emboss: perturb the surface normal by the field gradient, carried into
+  // world space through a cotangent frame built from the screen derivatives.
+  float bx = sampleB(v_uv + vec2(u_texel.x, 0.0)) - sampleB(v_uv - vec2(u_texel.x, 0.0));
+  float by = sampleB(v_uv + vec2(0.0, u_texel.y)) - sampleB(v_uv - vec2(0.0, u_texel.y));
+  vec3 dp1 = dFdx(v_pos), dp2 = dFdy(v_pos);
+  vec2 du1 = dFdx(v_uv), du2 = dFdy(v_uv);
+  vec3 dp2p = cross(dp2, N), dp1p = cross(N, dp1);
+  vec3 T = dp2p * du1.x + dp1p * du2.x;
+  vec3 Bt = dp2p * du1.y + dp1p * du2.y;
+  float inv = inversesqrt(max(max(dot(T, T), dot(Bt, Bt)), 1e-12));
+  N = normalize(N - (T * bx + Bt * by) * inv * u_relief * 22.0);
+
+  vec3 L = normalize(vec3(u_light, 0.85));
+  vec3 V = normalize(-v_pos);
+  float diff = clamp(dot(N, L), 0.0, 1.0);
+  vec3 H = normalize(L + V);
+  float spec = pow(clamp(dot(N, H), 0.0, 1.0), 28.0) * u_shine;
+  float rim = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0);
+  col = col * (0.34 + 0.78 * diff) + spec + col * rim * 0.35;
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`;
+
+const objProg = program(OBJ_FRAG, OBJ_VERT);
+
+/* ---- shapes: every one is a parametric patch over (u, v) in [0,1] ---- */
+const TAU = Math.PI * 2;
+function knotPoint(u) {
+  const a = u * TAU, r = 0.62 + 0.26 * Math.cos(3 * a);
+  return [r * Math.cos(2 * a), 0.28 * Math.sin(3 * a), r * Math.sin(2 * a)];
+}
+const SHAPES = {
+  sphere: {
+    label: 'sphere', vRatio: 0.5,
+    f: (u, v) => { const a = u * TAU, b = v * Math.PI;
+      return [Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)]; },
+    axis: () => [0, 0, 0],
+  },
+  torus: {
+    label: 'torus', vRatio: 0.4,
+    f: (u, v) => { const a = u * TAU, b = v * TAU, R = 0.78, r = 0.34;
+      return [(R + r * Math.cos(b)) * Math.cos(a), r * Math.sin(b), (R + r * Math.cos(b)) * Math.sin(a)]; },
+    axis: u => { const a = u * TAU; return [0.78 * Math.cos(a), 0, 0.78 * Math.sin(a)]; },
+  },
+  hyperboloid: {
+    label: 'hyperboloid', vRatio: 0.45,
+    f: (u, v) => { const a = u * TAU, y = v * 2 - 1, r = Math.sqrt(0.16 + y * y * 0.85);
+      return [r * Math.cos(a), y * 1.15, r * Math.sin(a)]; },
+    axis: (u, v) => [0, (v * 2 - 1) * 1.15, 0],
+  },
+  cylinder: {
+    label: 'cylinder', vRatio: 0.45,
+    f: (u, v) => { const a = u * TAU, y = v * 2 - 1;
+      return [0.62 * Math.cos(a), y * 1.05, 0.62 * Math.sin(a)]; },
+    axis: (u, v) => [0, (v * 2 - 1) * 1.05, 0],
+  },
+  cone: {
+    label: 'cone', vRatio: 0.45,
+    f: (u, v) => { const a = u * TAU, r = 0.06 + 0.92 * v;
+      return [r * Math.cos(a), (0.5 - v) * 1.7, r * Math.sin(a)]; },
+    axis: (u, v) => [0, (0.5 - v) * 1.7, 0],
+  },
+  knot: {
+    label: 'torus knot', vRatio: 0.25,
+    f: (u, v) => {
+      const h = 1e-3;
+      const c = knotPoint(u), c1 = knotPoint(u + h), c0 = knotPoint(u - h);
+      const T = v3norm(v3sub(c1, c0));
+      let N = [c1[0] + c0[0] - 2 * c[0], c1[1] + c0[1] - 2 * c[1], c1[2] + c0[2] - 2 * c[2]];
+      const d = v3dot(N, T);
+      N = v3norm([N[0] - T[0] * d, N[1] - T[1] * d, N[2] - T[2] * d]);
+      if (!isFinite(N[0]) || v3len(N) < 0.5) N = v3norm(v3cross(T, [0, 1, 0]));
+      const Bn = v3cross(T, N), a = v * TAU, rt = 0.17;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      return [c[0] + rt * (ca * N[0] + sa * Bn[0]),
+              c[1] + rt * (ca * N[1] + sa * Bn[1]),
+              c[2] + rt * (ca * N[2] + sa * Bn[2])];
+    },
+    axis: u => knotPoint(u),
+  },
+};
+
+/* one parametric mesh builder: positions, outward normals by finite
+   difference, uvs, triangles, and a wireframe line list. */
+function buildParametric(shape, nu, nv, wu, wv) {
+  const pos = [], nrm = [], uvs = [];
+  const h = 4e-4;
+  for (let j = 0; j <= nv; j++) {
+    for (let i = 0; i <= nu; i++) {
+      const u = i / nu, v = j / nv;
+      const p = shape.f(u, v);
+      const pu = v3sub(shape.f(u + h, v), shape.f(u - h, v));
+      const pv = v3sub(shape.f(u, Math.min(1, v + h)), shape.f(u, Math.max(0, v - h)));
+      let n = v3cross(pu, pv);
+      if (v3len(n) < 1e-9) n = v3sub(p, shape.axis(u, v));            // poles / seams
+      n = v3norm(n);
+      const out = v3sub(p, shape.axis(u, v));
+      if (v3dot(n, out) < 0) n = [-n[0], -n[1], -n[2]];               // face outward
+      pos.push(p[0], p[1], p[2]); nrm.push(n[0], n[1], n[2]); uvs.push(u, v);
+    }
+  }
+  const tri = [], line = [], idx = (i, j) => j * (nu + 1) + i;
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+    const a = idx(i, j), b = idx(i + 1, j), c = idx(i + 1, j + 1), d = idx(i, j + 1);
+    tri.push(a, b, c, a, c, d);
+  }
+  // wire: rings and meridians at their own spacing, but following every
+  // tessellated vertex, so the lines stay smooth on a coarse wireframe.
+  const su = Math.max(1, Math.round(nu / Math.max(1, wu)));
+  const sv = Math.max(1, Math.round(nv / Math.max(1, wv)));
+  for (let j = 0; j <= nv; j += sv) for (let i = 0; i < nu; i++) line.push(idx(i, j), idx(i + 1, j));
+  for (let i = 0; i <= nu; i += su) for (let j = 0; j < nv; j++) line.push(idx(i, j), idx(i, j + 1));
+  return {
+    pos: new Float32Array(pos), nrm: new Float32Array(nrm), uv: new Float32Array(uvs),
+    tri: new Uint32Array(tri), line: new Uint32Array(line),
+  };
+}
+
+const project = { on: false, shape: 'sphere', mode: 'both' };
+let objVao = null, objBuf = null, objCount = 0, objLineCount = 0;
+
+function rebuildObject() {
+  const shape = SHAPES[project.shape];
+  if (!shape) return;
+  const nu = Math.max(8, Math.round(P.pr_dens));
+  const nv = Math.max(6, Math.round(nu * shape.vRatio));
+  const wu = Math.round(P.pr_wire);
+  const wv = Math.max(3, Math.round(wu * shape.vRatio * 1.6));
+  const m = buildParametric(shape, nu, nv, wu, wv);
+  if (objBuf) { for (const b of objBuf) gl.deleteBuffer(b); gl.deleteVertexArray(objVao); }
+  objVao = gl.createVertexArray();
+  gl.bindVertexArray(objVao);
+  const mk = (data, loc, size) => {
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+    return b;
+  };
+  const bp = mk(m.pos, 0, 3), bn = mk(m.nrm, 1, 3), bu = mk(m.uv, 2, 2);
+  const bt = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bt);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.tri, gl.STATIC_DRAW);
+  const bl = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, bl);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.line, gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  objBuf = [bp, bn, bu, bt, bl];
+  objCount = m.tri.length; objLineCount = m.line.length;
+  gl.bindVertexArray(vao);
+}
+
+/* ---- matrices ---- */
+function matPerspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+  return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0]);
+}
+function matLookAt(eye, center, up) {
+  const f = v3norm(v3sub(center, eye));
+  const s = v3norm(v3cross(f, up));
+  const u = v3cross(s, f);
+  return new Float32Array([
+    s[0], u[0], -f[0], 0,
+    s[1], u[1], -f[1], 0,
+    s[2], u[2], -f[2], 0,
+    -v3dot(s, eye), -v3dot(u, eye), v3dot(f, eye), 1,
+  ]);
+}
+
+function render3D() {
+  if (!objVao) rebuildObject();
+  const bg = hexToRgb(palettes[currentPalette].stops[0]).map(c => c / 255);
+  const eye = orbitEye(orbit.dist);
+  const proj = matPerspective(0.84, canvas.width / Math.max(1, canvas.height), 0.05, 60);
+  // the canvas runs under the panel, so shift the frustum to keep the object
+  // centred in the part of it you can actually see.
+  const panel = document.getElementById('panel');
+  const hidden = panel.classList.contains('hidden');
+  proj[8] = hidden ? 0 : Math.min(0.6, panel.offsetWidth / Math.max(1, canvas.clientWidth));
+  const view = matLookAt(eye, [0, 0, 0], [0, 1, 0]);
+  const ang = P.light * Math.PI / 180;
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(bg[0], bg[1], bg[2], 1);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  gl.useProgram(objProg.prog);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, activeField());
+  gl.uniform1i(objProg.u.u_state, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, rampTex);
+  gl.uniform1i(objProg.u.u_ramp, 1);
+  gl.uniformMatrix4fv(objProg.u.u_proj, false, proj);
+  gl.uniformMatrix4fv(objProg.u.u_view, false, view);
+  gl.uniform2f(objProg.u.u_texel, 1 / simW, 1 / simH);
+  gl.uniform2f(objProg.u.u_light, Math.cos(ang), Math.sin(ang));
+  gl.uniform1f(objProg.u.u_lo, Math.min(P.colLo, P.colHi - 0.001));
+  gl.uniform1f(objProg.u.u_hi, P.colHi);
+  gl.uniform1f(objProg.u.u_relief, P.relief);
+  gl.uniform1f(objProg.u.u_shine, P.shine);
+  gl.uniform1f(objProg.u.u_smooth, smoothDisplay ? 1 : 0);
+  gl.uniform1f(objProg.u.u_tile, P.pr_tile);
+  gl.uniform1f(objProg.u.u_disp, P.pr_disp);
+
+  gl.bindVertexArray(objVao);
+  if (project.mode !== 'wire') {
+    gl.uniform1f(objProg.u.u_wire, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, objBuf[3]);
+    if (project.mode === 'both') { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.2, 1.2); }
+    gl.drawElements(gl.TRIANGLES, objCount, gl.UNSIGNED_INT, 0);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+  }
+  if (project.mode !== 'shaded') {
+    gl.uniform1f(objProg.u.u_wire, 1);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, objBuf[4]);
+    gl.drawElements(gl.LINES, objLineCount, gl.UNSIGNED_INT, 0);
+  }
+  gl.bindVertexArray(vao);
+  gl.disable(gl.DEPTH_TEST);
+}
+
+function setProject(on) {
+  project.on = on;
+  const b = document.getElementById('btn-project');
+  b.textContent = 'projection: ' + (on ? 'on' : 'off');
+  b.classList.toggle('primary', on);
+  document.getElementById('proj-body').style.display = on ? '' : 'none';
+  if (on && !objVao) rebuildObject();
+  document.getElementById('sec-draw').style.display =
+    (!on && currentModel === 'reaction') ? '' : 'none';
+  updateCursor();
+}
+function updateCursor() {
+  canvas.style.cursor = orbitActive() ? 'grab' : (currentModel === 'reaction' ? 'crosshair' : 'default');
 }
 
 /* ================================================================
@@ -963,6 +1526,12 @@ function pos(e) {
 }
 
 canvas.addEventListener('pointerdown', e => {
+  if (orbitActive()) {
+    canvas.setPointerCapture(e.pointerId);
+    orbit.dragging = true; orbit.last = [e.clientX, e.clientY];
+    canvas.style.cursor = 'grabbing';
+    return;
+  }
   if (currentModel !== 'reaction') return;
   canvas.setPointerCapture(e.pointerId);
   const { uv, client } = pos(e);
@@ -978,17 +1547,31 @@ canvas.addEventListener('pointerdown', e => {
   }
 });
 canvas.addEventListener('pointermove', e => {
+  if (orbit.dragging) {
+    orbit.yaw   -= (e.clientX - orbit.last[0]) * 0.0075;
+    orbit.pitch -= (e.clientY - orbit.last[1]) * 0.0075;
+    orbit.pitch = Math.max(-1.45, Math.min(1.45, orbit.pitch));
+    orbit.last = [e.clientX, e.clientY];
+    return;
+  }
+  if (orbitActive()) return;
   const { uv, client } = pos(e);
   if (draw.tool === 'brush') { if (draw.active) draw.target = uv.slice(); }
   else if (draw.previewing) { draw.curClient = client.slice(); draw.curPx = [uv[0] * simW, uv[1] * simH]; drawPreview(); }
 });
 function endPointer() {
+  if (orbit.dragging) { orbit.dragging = false; updateCursor(); return; }
   if (draw.tool === 'brush') draw.active = false;
   else if (draw.previewing) { commitShape(); draw.previewing = false; octx.clearRect(0, 0, overlay.width, overlay.height); }
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => {
+  if (!orbitActive()) return;
+  e.preventDefault();
+  setParam('pr_dist', orbit.dist * Math.exp(e.deltaY * 0.0012));
+}, { passive: false });
 
 function updateBrush() {
   if (draw.tool !== 'brush' || !draw.active) return;
@@ -1356,21 +1939,25 @@ function render() {
 
 function frame() {
   if (!paused) simTime += 0.016;
+  if (!paused && !orbit.dragging && orbitActive()) {
+    orbit.yaw += P.pr_spin * 0.016;
+  }
   if (currentModel === 'reaction') {
     if (!paused) step();
     updateBrush();
   } else {
     renderGenerative();
   }
-  render();
+  if (project.on) render3D(); else render();
   frames++;
   const now = performance.now();
   if (now - lastFpsT > 500) {
     fps = Math.round(frames * 1000 / (now - lastFpsT));
     frames = 0; lastFpsT = now;
-    const detail = currentModel === 'reaction'
+    const detail = (currentModel === 'reaction'
       ? '<span class="k">' + Math.round(fps * P.steps) + '</span> steps/s'
-      : '<span class="k">' + MODELS[currentModel].label + '</span>';
+      : '<span class="k">' + MODELS[currentModel].label + '</span>')
+      + (project.on ? ' · projected on <span class="k">' + SHAPES[project.shape].label + '</span>' : '');
     document.getElementById('status').innerHTML =
       '<span class="k">' + simW + '×' + simH + '</span> field · ' +
       '<span class="k">' + fps + '</span> fps · ' + detail +
@@ -1415,6 +2002,9 @@ document.getElementById('btn-smooth').addEventListener('click', () => {
   document.getElementById('btn-smooth').textContent = 'smooth: ' + (smoothDisplay ? 'on' : 'off');
 });
 document.getElementById('simscale').addEventListener('change', () => allocSim(true));
+document.getElementById('btn-project').addEventListener('click', () => setProject(!project.on));
+document.getElementById('projshape').addEventListener('change', e => { project.shape = e.target.value; rebuildObject(); });
+document.getElementById('projmode').addEventListener('change', e => { project.mode = e.target.value; });
 document.getElementById('paneltoggle').addEventListener('click', togglePanel);
 
 window.addEventListener('keydown', e => {
@@ -1432,6 +2022,7 @@ window.addEventListener('keydown', e => {
     case 'x': if (currentModel === 'reaction') document.getElementById('btn-fill').click(); break;
     case 's': exportPNG(); break;
     case 'v': toggleRecord(); break;
+    case 'o': setProject(!project.on); break;
     case 'h': togglePanel(); break;
   }
 });
@@ -1439,6 +2030,7 @@ window.addEventListener('keydown', e => {
 /* ---------------- boot ---------------- */
 buildParamRows(RENDER_PARAMS, document.getElementById('params-render'), false);
 buildParamRows(DRAW_PARAMS, document.getElementById('params-brush'), false);
+buildParamRows(PROJECT_PARAMS, document.getElementById('params-project'), false);
 buildPresets();
 buildPaletteUI();
 selectModel('reaction');
@@ -1447,3 +2039,84 @@ initMidi();
 resize();
 requestAnimationFrame(frame);
 </script>
+<script>
+/* ==================================================================
+   accessibility shim  -  WCAG 2.2 AA
+   ------------------------------------------------------------------
+   These artefacts carry state in CSS classes, which assistive tech
+   cannot see. Rather than thread ARIA through every handler, this
+   mirrors the state that already exists onto the accessibility tree
+   and keeps it in sync. It changes nothing visually.
+   ================================================================== */
+(function () {
+  'use strict';
+
+  /* --- 4.1.2  a button that carries `.active` is a toggle ---------- */
+  function isToggle(b) {
+    return b.tagName === 'BUTTON' &&
+           (b.classList.contains('active') ||
+            (b.parentElement && b.parentElement.querySelector(':scope > button.active')));
+  }
+  function syncPressed(b) {
+    if (!isToggle(b) && !b.hasAttribute('aria-pressed')) return;
+    b.setAttribute('aria-pressed', b.classList.contains('active') ? 'true' : 'false');
+  }
+
+  /* --- 4.1.2  panel visibility lives in a class, so mirror it ------ */
+  var panel  = document.getElementById('panel');
+  var toggle = document.getElementById('paneltoggle');
+  function syncPanel() {
+    if (!panel || !toggle) return;
+    var open = !panel.classList.contains('hidden');
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // 2.4.3 - a panel slid off-screen must not stay in the tab order
+    if (open) panel.removeAttribute('inert');
+    else panel.setAttribute('inert', '');
+  }
+
+  /* --- 1.3.1  the readout beside a slider is its value ------------- */
+  function syncValue(span) {
+    var id = span.id && span.id.indexOf('val-') === 0 ? span.id.slice(4) : null;
+    if (!id) return;
+    var inp = document.getElementById('in-' + id);
+    if (inp) inp.setAttribute('aria-valuetext', span.textContent.trim());
+  }
+
+  function initialPass() {
+    document.querySelectorAll('button').forEach(syncPressed);
+    document.querySelectorAll('span.val[id^="val-"]').forEach(syncValue);
+    syncPanel();
+  }
+
+  var obs = new MutationObserver(function (records) {
+    records.forEach(function (r) {
+      if (r.type === 'attributes' && r.target.tagName === 'BUTTON') syncPressed(r.target);
+      else if (r.type === 'attributes' && r.target === panel) syncPanel();
+      else if (r.type === 'childList' || r.type === 'characterData') {
+        var t = r.target.nodeType === 3 ? r.target.parentElement : r.target;
+        if (t && t.classList && t.classList.contains('val')) syncValue(t);
+        if (r.type === 'childList') {
+          r.addedNodes.forEach(function (n) {
+            if (n.nodeType !== 1) return;
+            if (n.tagName === 'BUTTON') syncPressed(n);
+            n.querySelectorAll && n.querySelectorAll('button').forEach(syncPressed);
+            n.querySelectorAll && n.querySelectorAll('span.val[id^="val-"]').forEach(syncValue);
+          });
+        }
+      }
+    });
+  });
+
+  function start() {
+    initialPass();
+    obs.observe(document.body, {
+      subtree: true, childList: true, characterData: true,
+      attributes: true, attributeFilter: ['class']
+    });
+  }
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+</script>
+

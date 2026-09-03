@@ -15,7 +15,9 @@ mapping are shared across all of them. Switch models from the panel:
 - **Voronoi cells** — organic cellular partition with cell count, gap,
   smoothness, jitter, and animated drift.
 - **Marble veins** — domain-warped noise for flowing marble / vein structures.
-- **Metaballs** — merging blobs with adjustable count, size, threshold, motion.
+- **Metaballs 3D** — raymarched blobs merged with a smooth minimum. The field
+  is the surface depth seen from the camera, so relief shading and the contour
+  export follow the real geometry. Drag to orbit the cluster, wheel to zoom.
 - **Flow lines** — warped wavefronts for fingerprint / topographic contours.
 
 Generative models have a **Generate** button that reshuffles the random seed.
@@ -23,6 +25,25 @@ Generative models have a **Generate** button that reshuffles the random seed.
 Open `index.html` in a browser (Chrome or Edge for Web MIDI). No build step, no server needed —
 though MIDI and some export features prefer `https://` or `localhost`, so
 `python3 -m http.server` works well.
+
+## 3D projection
+
+Any model's field can be mapped, live, onto an orbiting object: **sphere,
+torus, hyperboloid, cylinder, cone, torus knot**. Drag the canvas to turn it,
+wheel to zoom, `o` to toggle. The simulation keeps running underneath, so a
+reaction-diffusion pattern grows across the surface in real time.
+
+- **Surface styles** — shaded, wireframe, or both. The wireframe is a
+  see-through grid in the style of the classic wireframe-primitive plates; its
+  line spacing is independent of how finely the surface is tessellated.
+- **Displacement** — the field pushes vertices along the surface normal, so
+  chemical B becomes actual relief on the object.
+- **Embossing** — the field gradient perturbs the surface normal through a
+  cotangent frame, so the pattern is lit as if it were carved into the object.
+- **Tiling** — repeat the field across the surface, 0.5× to 6×.
+
+PNG and video export capture whatever is on the canvas, so they record the
+projected object; SVG export always traces the flat field.
 
 ## Features
 
@@ -64,7 +85,10 @@ though MIDI and some export features prefer `https://` or `localhost`, so
 | `x` | toggle fill |
 | `s` | export PNG |
 | `v` | start / stop video recording |
+| `o` | toggle 3D projection |
 | `h` | toggle control panel |
 
 Drag on the canvas to draw with the current tool; hold `shift` to erase.
 Pause first if you want to sketch a seed without the reaction advancing.
+While a 3D view is on screen — the projection, or the 3D metaball model — the
+drag orbits the camera instead, and the drawing tools are put away.
