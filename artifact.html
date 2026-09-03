@@ -149,6 +149,19 @@
   .selrow select { flex: 1; }
   .sublabel { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-dim); margin: 2px 0 5px; }
 
+  /* colour swatches */
+  #swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 2px 0 12px; }
+  .swatch { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+  .swatch input[type=color] {
+    width: 100%; height: 26px; padding: 0; cursor: pointer; background: transparent;
+    border: 1px solid var(--control-border); border-radius: 3px;
+  }
+  .swatch input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+  .swatch input[type=color]::-webkit-color-swatch { border: none; border-radius: 2px; }
+  .swatch span {
+    font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim);
+  }
+
   .hint { font-size: 9.5px; line-height: 1.7; color: var(--ink-dim); letter-spacing: 0.04em; }
   .hint b { color: var(--ink); font-weight: 400; }
 
@@ -324,10 +337,18 @@
         <option value="shaded">shaded</option>
         <option value="wire">wireframe</option>
       </select>
+      <div class="btnrow" style="margin-bottom:10px">
+        <button class="act primary" id="btn-surface">grow on surface: on</button>
+      </div>
       <div id="params-project"></div>
       <div class="hint" style="margin-top:10px">
         <b>drag</b> to orbit · <b>wheel</b> to zoom · <b>o</b> toggles. the pattern keeps
-        running underneath, so the projection is live.
+        running underneath, so it is live either way.<br><br>
+        <b>grow on surface</b> evaluates the pattern at points on the object itself
+        rather than wrapping a flat rectangle around it: no seam, no pinch at the
+        poles, and the reaction solves with the surface metric so a spot is the
+        same size wherever it lands. off, you get the flat field projected, with
+        tiling.
       </div>
     </div>
   </div>
@@ -335,9 +356,22 @@
   <div class="section">
     <h2>Rendering</h2>
     <select aria-label="Colour palette" id="palette"></select>
+    <div id="swatches" style="display:none"></div>
+    <div id="params-color"></div>
+    <div class="sublabel" style="margin-top:14px">light &amp; level</div>
     <div id="params-render"></div>
     <div class="btnrow" style="margin-top:4px">
       <button class="act" id="btn-smooth">smooth: on</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Liquid <span class="tag" id="liquid-tag"></span></h2>
+    <div id="params-liquid"></div>
+    <div class="hint">
+      <b>liquid</b> floats the surface on a slow flow and wets the highlight;
+      <b>pulse</b> sends waves of thickness through the pattern. both read on the
+      flat field and on a projected object.
     </div>
   </div>
 
@@ -428,8 +462,42 @@ layout(location=0) in vec2 a_pos;
 out vec2 v_uv;
 void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
 
+/* ---- the surface map ----
+   when the field is grown on an object rather than projected onto it, this
+   texture carries the object-space position of every (u, v) on its surface,
+   baked from the same parametric function the mesh is built from. the models
+   evaluate their pattern at that 3-d point, so a voronoi cell or a marble
+   vein is a feature of the object, not of a rectangle wrapped around it —
+   no seam, no pinch at the poles. the reaction-diffusion solver instead reads
+   the local stretch of the parameterisation out of it, and weights its
+   laplacian by the inverse square, so a spot is the same size everywhere on
+   the surface however uneven the uv is. -------------------------------- */
+const SURFACE = `
+uniform sampler2D u_surf;
+uniform vec2  u_surftexel;
+uniform float u_surface, u_surfref, u_surfscale;
+
+vec3 surfPos(vec2 uv) { return texture(u_surf, uv).xyz; }
+// world units per unit of u and of v — the metric of the parameterisation
+vec2 surfStretch(vec2 uv) {
+  vec2 d = u_surftexel;
+  vec3 pu = surfPos(uv + vec2(d.x, 0.0)) - surfPos(uv - vec2(d.x, 0.0));
+  vec3 pv = surfPos(uv + vec2(0.0, d.y)) - surfPos(uv - vec2(0.0, d.y));
+  return vec2(length(pu) / (2.0 * d.x), length(pv) / (2.0 * d.y));
+}
+// where a model should evaluate itself: a point on the object in surface mode,
+// the flat rectangle otherwise
+vec3 domainAt(vec2 uv, vec2 aspect, float scale) {
+  // the 0.5 keeps a model's own scale meaning roughly "features across the
+  // object", the same as it means across the flat field
+  if (u_surface > 0.5) return surfPos(uv) * u_surfscale * scale * 0.5;
+  return vec3(uv * aspect * scale, 0.0);
+}`;
+
+/* ---- generative models: each writes a scalar field into .g ---- */
 const SIM_FRAG = `#version 300 es
 precision highp float;
+${SURFACE}
 uniform sampler2D u_state;
 uniform vec2  u_texel;
 uniform float u_dA, u_dB, u_feed, u_kill, u_dt, u_biasX, u_biasY;
@@ -437,16 +505,32 @@ in vec2 v_uv;
 out vec4 outColor;
 void main() {
   vec2 c = texture(u_state, v_uv).rg;
+
+  // per-axis diffusion weights. flat, they are 1 and the stencil below is the
+  // usual 9-point laplacian. on a surface, one texel of u covers a different
+  // world distance than one texel of v, and both vary across the object —
+  // weighting by the inverse square of that distance is what turns the uv
+  // laplacian into the surface one, so a spot keeps its size wherever it grows.
+  vec2 w = vec2(1.0);
+  if (u_surface > 0.5) {
+    vec2 g = surfStretch(v_uv) * u_texel;              // world units per texel
+    float gref = u_surfref * sqrt(u_texel.x * u_texel.y);
+    vec2 ratio = gref / max(g, vec2(1e-5));
+    w = clamp(ratio * ratio, vec2(0.05), vec2(2.0));
+  }
+  float wd = 0.5 * (w.x + w.y);                        // diagonal taps
+  float centre = 0.4 * w.x + 0.4 * w.y + 0.2 * wd;     // keeps a flat field flat
+
   // laplacian with directional (anisotropic) bias on the axial taps
-  vec2 lap = -c;
-  lap += 0.20 * (1.0 + u_biasX) * texture(u_state, v_uv + vec2( u_texel.x, 0.0)).rg;
-  lap += 0.20 * (1.0 - u_biasX) * texture(u_state, v_uv + vec2(-u_texel.x, 0.0)).rg;
-  lap += 0.20 * (1.0 + u_biasY) * texture(u_state, v_uv + vec2(0.0,  u_texel.y)).rg;
-  lap += 0.20 * (1.0 - u_biasY) * texture(u_state, v_uv + vec2(0.0, -u_texel.y)).rg;
-  lap += 0.05 * texture(u_state, v_uv + vec2( u_texel.x,  u_texel.y)).rg;
-  lap += 0.05 * texture(u_state, v_uv + vec2(-u_texel.x,  u_texel.y)).rg;
-  lap += 0.05 * texture(u_state, v_uv + vec2( u_texel.x, -u_texel.y)).rg;
-  lap += 0.05 * texture(u_state, v_uv + vec2(-u_texel.x, -u_texel.y)).rg;
+  vec2 lap = -centre * c;
+  lap += 0.20 * w.x * (1.0 + u_biasX) * texture(u_state, v_uv + vec2( u_texel.x, 0.0)).rg;
+  lap += 0.20 * w.x * (1.0 - u_biasX) * texture(u_state, v_uv + vec2(-u_texel.x, 0.0)).rg;
+  lap += 0.20 * w.y * (1.0 + u_biasY) * texture(u_state, v_uv + vec2(0.0,  u_texel.y)).rg;
+  lap += 0.20 * w.y * (1.0 - u_biasY) * texture(u_state, v_uv + vec2(0.0, -u_texel.y)).rg;
+  lap += 0.05 * wd * texture(u_state, v_uv + vec2( u_texel.x,  u_texel.y)).rg;
+  lap += 0.05 * wd * texture(u_state, v_uv + vec2(-u_texel.x,  u_texel.y)).rg;
+  lap += 0.05 * wd * texture(u_state, v_uv + vec2( u_texel.x, -u_texel.y)).rg;
+  lap += 0.05 * wd * texture(u_state, v_uv + vec2(-u_texel.x, -u_texel.y)).rg;
 
   float A = c.r, B = c.g;
   float reaction = A * B * B;
@@ -541,14 +625,17 @@ void main() {
   outColor = vec4(next, 0.0, 1.0);
 }`;
 
-const DISPLAY_FRAG = `#version 300 es
-precision highp float;
+/* ---- field sampling + the liquid / pulse layer ----
+   shared verbatim by the flat display, the object's vertex stage (so the
+   displacement moves with the pattern, not against it) and its fragment
+   stage. bilinear is done by hand: the field lives in a float texture, which
+   is not guaranteed filterable. ---------------------------------------- */
+const FIELD_FX = `
 uniform sampler2D u_state;
-uniform sampler2D u_ramp;
-uniform float u_lo, u_hi, u_relief, u_shine, u_smooth;
-uniform vec2  u_texel, u_light;
-in vec2 v_uv;
-out vec4 outColor;
+uniform vec2  u_texel;
+uniform float u_smooth;
+uniform float u_time, u_liquid, u_lqflow, u_pulse, u_pulserate, u_pulsewave, u_dsmooth;
+
 float rawB(vec2 uv) { return texture(u_state, uv).g; }
 float sampleB(vec2 uv) {
   if (u_smooth < 0.5) return rawB(uv);
@@ -560,19 +647,66 @@ float sampleB(vec2 uv) {
   float b01 = rawB(t + vec2(0.0, u_texel.y)), b11 = rawB(t + u_texel);
   return mix(mix(b00, b10, f.x), mix(b01, b11, f.x), f.y);
 }
+// a wider, weighted tap set — what the displacement rides on. a hard-edged
+// field would otherwise pull the mesh into facets; this lets the surface
+// swell across the whole feature instead of at its border.
+float fieldSoft(vec2 uv) {
+  if (u_dsmooth <= 0.01) return sampleB(uv);
+  vec2 e = u_texel * u_dsmooth;
+  float s = sampleB(uv) * 4.0;
+  s += sampleB(uv + vec2(e.x, 0.0)) + sampleB(uv - vec2(e.x, 0.0))
+     + sampleB(uv + vec2(0.0, e.y)) + sampleB(uv - vec2(0.0, e.y));
+  s += 0.7 * (sampleB(uv + e) + sampleB(uv - e)
+            + sampleB(uv + vec2(e.x, -e.y)) + sampleB(uv - vec2(e.x, -e.y)));
+  return s / 10.8;
+}
+// liquid: the read drifts on a slow rotational flow, so the surface reads as
+// something moving under a film rather than a print.
+vec2 liquidWarp(vec2 uv) {
+  if (u_liquid <= 0.0) return uv;
+  float t = u_time * u_lqflow;
+  vec2 w = vec2(sin(uv.y * 7.3 + t * 1.10) + 0.6 * sin(uv.x * 11.7 - t * 0.70),
+                cos(uv.x * 6.9 - t * 0.90) + 0.6 * cos(uv.y * 12.3 + t * 0.60));
+  return uv + w * u_liquid * 0.014;
+}
+// pulse: a travelling swell in thickness. d is whatever distance the wave
+// should run along — radial on the flat field, through space on an object.
+float pulseAt(float d) {
+  if (u_pulse <= 0.0) return 1.0;
+  return 1.0 + u_pulse * 0.45 * sin(6.2831 * (u_time * u_pulserate - d * u_pulsewave));
+}`;
+
+const DISPLAY_FRAG = `#version 300 es
+precision highp float;
+${FIELD_FX}
+uniform sampler2D u_ramp;
+uniform float u_lo, u_hi, u_relief, u_shine;
+uniform vec2  u_light;
+in vec2 v_uv;
+out vec4 outColor;
 void main() {
-  float B = sampleB(v_uv);
+  vec2 uv = liquidWarp(v_uv);
+  float swell = pulseAt(length(v_uv - 0.5));
+  float B = sampleB(uv) * swell;
   float t = smoothstep(u_lo, u_hi, B);
   vec3 col = texture(u_ramp, vec2(t, 0.5)).rgb;
   // normal from the B height field → diffuse + specular relief
-  float bx = sampleB(v_uv + vec2(u_texel.x, 0.0)) - sampleB(v_uv - vec2(u_texel.x, 0.0));
-  float by = sampleB(v_uv + vec2(0.0, u_texel.y)) - sampleB(v_uv - vec2(0.0, u_texel.y));
+  float bx = (sampleB(uv + vec2(u_texel.x, 0.0)) - sampleB(uv - vec2(u_texel.x, 0.0))) * swell;
+  float by = (sampleB(uv + vec2(0.0, u_texel.y)) - sampleB(uv - vec2(0.0, u_texel.y))) * swell;
   vec3 n = normalize(vec3(-bx * u_relief * 60.0, -by * u_relief * 60.0, 1.0));
   vec3 L = normalize(vec3(u_light, 0.85));
   float diff = clamp(dot(n, L), 0.0, 1.0);
   vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
   float spec = pow(clamp(dot(n, H), 0.0, 1.0), 28.0) * u_shine;
   col = col * (0.5 + 0.7 * diff) + spec;
+  if (u_liquid > 0.0) {
+    // wet: a tight second highlight and a grazing sheen, plus a little depth
+    // tint where the field is thick — light carrying through a body of liquid
+    float wet = pow(clamp(dot(n, H), 0.0, 1.0), 120.0);
+    float sheen = pow(1.0 - clamp(n.z, 0.0, 1.0), 3.0);
+    vec3 liq = col * (0.80 + 0.55 * t) + vec3(wet * 0.85 + sheen * 0.22);
+    col = mix(col, liq, u_liquid);
+  }
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
@@ -584,6 +718,33 @@ out vec4 outColor;
 void main() { float B = texture(u_state, v_uv).g; outColor = vec4(B, B, B, 1.0); }`;
 
 /* ---- generative models: each writes a scalar field into .g ---- */
+const NOISE3 = `
+float hash13(vec3 p3) {
+  p3 = fract(p3 * 0.1031);
+  p3 += dot(p3, p3.zyx + 31.32);
+  return fract((p3.x + p3.y) * p3.z);
+}
+vec3 hash33(vec3 p3) {
+  p3 = fract(p3 * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.xxy + p3.yxx) * p3.zyx);
+}
+float vnoise3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  vec3 u = f * f * (3.0 - 2.0 * f);
+  float n000 = hash13(i), n100 = hash13(i + vec3(1,0,0));
+  float n010 = hash13(i + vec3(0,1,0)), n110 = hash13(i + vec3(1,1,0));
+  float n001 = hash13(i + vec3(0,0,1)), n101 = hash13(i + vec3(1,0,1));
+  float n011 = hash13(i + vec3(0,1,1)), n111 = hash13(i + vec3(1,1,1));
+  return mix(mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+             mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z);
+}
+float fbm3(vec3 p, int oct) {
+  float v = 0.0, amp = 0.5;
+  for (int i = 0; i < 8; i++) { if (i >= oct) break; v += amp * vnoise3(p); p *= 2.03; amp *= 0.5; }
+  return v;
+}`;
+
 const NOISE = `
 // the usual fract(p.x * p.y) hash correlates hard on an integer lattice: the
 // two components of hash2 came out of the same function shifted by a constant,
@@ -616,8 +777,42 @@ float fbm(vec2 p, int oct){
 const VORONOI_FRAG = `#version 300 es
 precision highp float;
 ${NOISE}
+${NOISE3}
+${SURFACE}
 uniform vec2 u_res; uniform float u_time, u_seed, u_count, u_gap, u_smooth, u_jitter, u_drift;
 in vec2 v_uv; out vec4 outColor;
+
+// the same construction one dimension up, evaluated at a point on the object.
+// cells are volumes now, and the surface cuts through them — which is what
+// makes the pattern belong to the object instead of being wrapped onto it.
+vec3 site3(vec3 cell) {
+  vec3 h  = hash33(cell + vec3(u_seed, u_seed * 1.7 + 3.3, u_seed * 0.6 + 11.1));
+  vec3 ph = hash33(cell + vec3(u_seed * 0.31 + 71.7, 19.3, 5.9));
+  vec3 o = vec3(0.5) + (h - 0.5) * u_jitter;
+  o += 0.18 * u_jitter * vec3(sin(u_time * u_drift + 6.2831 * ph.x),
+                              sin(u_time * u_drift * 0.87 + 6.2831 * ph.y),
+                              sin(u_time * u_drift * 0.93 + 6.2831 * ph.z));
+  return o;
+}
+float voronoi3(vec3 p) {
+  vec3 n = floor(p), f = fract(p);
+  vec3 mr = vec3(0.0), mg = vec3(0.0); float md = 8.0;
+  for (int k = -1; k <= 1; k++) for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec3 g = vec3(float(i), float(j), float(k));
+    vec3 r = g + site3(n + g) - f;
+    float d = dot(r, r);
+    if (d < md) { md = d; mr = r; mg = g; }
+  }
+  float border = 8.0;
+  for (int k = -1; k <= 1; k++) for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec3 g = mg + vec3(float(i), float(j), float(k));
+    vec3 r = g + site3(n + g) - f;
+    vec3 diff = r - mr;
+    float dd = dot(diff, diff);
+    if (dd > 1e-5) border = min(border, dot(0.5 * (mr + r), diff * inversesqrt(dd)));
+  }
+  return border;
+}
 
 // a cell's site, in lattice space. the offset is a stable per-cell hash, so a
 // cell keeps its identity; drift moves each site on its own small orbit with an
@@ -634,6 +829,11 @@ vec2 site(vec2 cell) {
 
 void main() {
   vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
+  if (u_surface > 0.5) {
+    float b = voronoi3(domainAt(v_uv, aspect, u_count));
+    outColor = vec4(vec3(smoothstep(u_gap, u_gap + u_smooth + 0.001, b)), 1.0);
+    return;
+  }
   vec2 p = v_uv * aspect * u_count;
   vec2 n = floor(p), f = fract(p);
 
@@ -666,10 +866,26 @@ void main() {
 const MARBLE_FRAG = `#version 300 es
 precision highp float;
 ${NOISE}
+${NOISE3}
+${SURFACE}
 uniform vec2 u_res; uniform float u_time, u_seed, u_scale, u_warp, u_detail, u_contrast, u_flow;
 in vec2 v_uv; out vec4 outColor;
 void main() {
   vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
+  if (u_surface > 0.5) {
+    vec3 P = domainAt(v_uv, aspect, u_scale) + u_seed * 13.0;
+    int o3 = int(u_detail);
+    vec3 q = vec3(fbm3(P + vec3(0.0, u_time * u_flow, 0.0), o3),
+                  fbm3(P + vec3(5.2, 1.3, 7.1), o3),
+                  fbm3(P + vec3(2.8, 9.4, 3.6), o3));
+    vec3 r = vec3(fbm3(P + u_warp * q + vec3(1.7, 9.2, 4.4) + u_time * 0.05 * u_flow, o3),
+                  fbm3(P + u_warp * q + vec3(8.3, 2.8, 1.1), o3),
+                  fbm3(P + u_warp * q + vec3(6.5, 5.7, 8.9), o3));
+    float vv = fbm3(P + u_warp * r, o3);
+    vv = smoothstep(0.5 - u_contrast * 0.5, 0.5 + u_contrast * 0.5, vv);
+    outColor = vec4(vec3(vv), 1.0);
+    return;
+  }
   vec2 p = v_uv * aspect * u_scale + u_seed * 13.0;
   int oct = int(u_detail);
   vec2 q = vec2(fbm(p + vec2(0.0, u_time * u_flow), oct), fbm(p + vec2(5.2, 1.3), oct));
@@ -682,6 +898,7 @@ void main() {
 
 const METABALLS_FRAG = `#version 300 es
 precision highp float;
+${SURFACE}
 uniform vec2  u_res;
 uniform vec4  u_balls[32];   // xyz centre, w radius — animated on the cpu
 uniform vec4  u_bound;       // bounding sphere of the whole cluster
@@ -714,6 +931,15 @@ vec2 boundSpan(vec3 ro, vec3 rd) {
   return vec2(-b - h, -b + h);
 }
 void main() {
+  // on a surface there is nothing to raymarch: read the same field where the
+  // object's skin passes through it, and the blobs swell out of the object
+  if (u_surface > 0.5) {
+    // a wide falloff, so a blob starts to show through the skin as it comes
+    // close rather than appearing only where it breaks the surface
+    float d = map(surfPos(v_uv) * u_surfscale);
+    outColor = vec4(vec3(smoothstep(0.34, -0.08, d)), 1.0);
+    return;
+  }
   vec2 ndc = (v_uv * 2.0 - 1.0) * vec2(u_res.x / u_res.y, 1.0);
   vec3 rd = normalize(u_camBasis * vec3(ndc * u_fov, 1.0));
   vec2 span = boundSpan(u_camPos, rd);
@@ -740,10 +966,21 @@ void main() {
 const STRIPES_FRAG = `#version 300 es
 precision highp float;
 ${NOISE}
+${NOISE3}
+${SURFACE}
 uniform vec2 u_res; uniform float u_time, u_seed, u_freq, u_warp, u_angle, u_detail, u_flow;
 in vec2 v_uv; out vec4 outColor;
 void main() {
   vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
+  if (u_surface > 0.5) {
+    vec3 P = domainAt(v_uv, aspect, 1.0) + u_seed * 7.0;
+    vec3 dir = normalize(vec3(cos(u_angle), sin(u_angle) * 0.8, sin(u_angle * 1.7) * 0.6));
+    int o3 = int(u_detail);
+    float w3 = fbm3(P * 1.6 + u_time * 0.1 * u_flow, o3);
+    float ph = dot(P, dir) * u_freq + u_warp * (w3 - 0.5) * 6.2831 + u_time * 0.2 * u_flow;
+    outColor = vec4(vec3(0.5 + 0.5 * sin(ph * 6.2831)), 1.0);
+    return;
+  }
   vec2 p = v_uv * aspect + u_seed * 7.0;
   vec2 dir = vec2(cos(u_angle), sin(u_angle));
   int oct = int(u_detail);
@@ -862,6 +1099,21 @@ const RENDER_PARAMS = [
   { id: 'shine',  label: 'specular',      min: 0.00,  max: 0.80,  step: 0.01,   value: 0.30,   dp: 2 },
   { id: 'light',  label: 'light angle',   min: 0,     max: 360,   step: 1,      value: 135,    dp: 0 },
 ];
+const COLOR_PARAMS = [
+  { id: 'col_hue',   label: 'hue shift',    min: -180,  max: 180,   step: 1,     value: 0,    dp: 0 },
+  { id: 'col_sat',   label: 'saturation',   min: 0.00,  max: 2.00,  step: 0.01,  value: 1.00, dp: 2 },
+  { id: 'col_lift',  label: 'brightness',   min: -0.35, max: 0.35,  step: 0.01,  value: 0.00, dp: 2 },
+  { id: 'col_gamma', label: 'ramp curve',   min: 0.35,  max: 2.60,  step: 0.01,  value: 1.00, dp: 2 },
+  { id: 'col_spin',  label: 'hue spread',   min: -120,  max: 120,   step: 1,     value: 0,    dp: 0 },
+  { id: 'col_cycle', label: 'hue drift',    min: 0.00,  max: 1.00,  step: 0.01,  value: 0.00, dp: 2 },
+];
+const LIQUID_PARAMS = [
+  { id: 'lq_amount', label: 'liquid',       min: 0.00,  max: 1.00,  step: 0.01,  value: 0.00, dp: 2 },
+  { id: 'lq_flow',   label: 'flow',         min: 0.00,  max: 2.00,  step: 0.01,  value: 0.60, dp: 2 },
+  { id: 'pulse',     label: 'pulse',        min: 0.00,  max: 1.00,  step: 0.01,  value: 0.00, dp: 2 },
+  { id: 'pulserate', label: 'pulse rate',   min: 0.05,  max: 3.00,  step: 0.01,  value: 0.70, dp: 2 },
+  { id: 'pulsewave', label: 'pulse waves',  min: 0.00,  max: 12.0,  step: 0.1,   value: 3.0,  dp: 1 },
+];
 const DRAW_PARAMS = [
   { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0 },
   { id: 'stab',   label: 'stabilizer',    min: 0.00,  max: 0.92,  step: 0.01,   value: 0.55,   dp: 2 },
@@ -870,8 +1122,10 @@ const PROJECT_PARAMS = [
   { id: 'pr_dist', label: 'camera dist',   min: 1.4,  max: 8.0,  step: 0.01, value: 3.40, dp: 2 },
   { id: 'pr_spin', label: 'auto orbit',    min: 0.00, max: 1.00, step: 0.01, value: 0.12, dp: 2 },
   { id: 'pr_tile', label: 'pattern tiling',min: 0.5,  max: 6.0,  step: 0.1,  value: 1.0,  dp: 1 },
-  { id: 'pr_disp', label: 'displacement',  min: 0.00, max: 0.35, step: 0.005, value: 0.04, dp: 3 },
-  { id: 'pr_dens', label: 'mesh density',  min: 16,   max: 200,  step: 4,    value: 96,   dp: 0 },
+  { id: 'pr_wscale', label: 'surface scale',min: 0.20, max: 4.0, step: 0.05, value: 1.0, dp: 2 },
+  { id: 'pr_disp', label: 'displacement',  min: 0.00, max: 0.35, step: 0.005, value: 0.05, dp: 3 },
+  { id: 'pr_soft', label: 'disp. softness',min: 0.0,  max: 8.0,  step: 0.1,  value: 2.5,  dp: 1 },
+  { id: 'pr_dens', label: 'mesh density',  min: 16,   max: 256,  step: 4,    value: 144,  dp: 0 },
   { id: 'pr_wire', label: 'wire lines',    min: 4,    max: 64,   step: 1,    value: 22,   dp: 0 },
 ];
 const MODEL_PARAMS = {
@@ -915,7 +1169,7 @@ const MODEL_PARAMS = {
   ],
 };
 const paramById = {};
-[RENDER_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
+[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
   list.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; }));
 
 function buildParamRows(list, container, clear) {
@@ -950,6 +1204,8 @@ function setParam(id, value, updateSlider = true) {
   refreshParamUI(id);
   if (id === 'feed' || id === 'kill') { markPresetCustom(); updateModelTag(); }
   if (updateSlider === false && RENDER_PARAMS.some(r => r.id === id)) modelRenderTouched[id] = true;
+  if (COLOR_PARAMS.some(c => c.id === id)) refreshRamp();
+  if (LIQUID_PARAMS.some(c => c.id === id)) updateLiquidTag();
   if (id === 'pr_dens' || id === 'pr_wire') rebuildObject();
   if (id === 'pr_dist') orbit.dist = value;
   if (!retuning) {
@@ -1037,7 +1293,10 @@ function retuneRanges() {
     setParamRange('kill', kc + Math.min(band[0], kOffset), kc + Math.max(band[1], kOffset));
     setParam('kill', kc + kOffset);
     setParamRange('dB', paramById.dB.min, Math.max(paramById.dB.min + 0.02, 0.50 * P.dA));
-    setParamRange('dt', paramById.dt.min, Math.min(paramById.dt.max, 1.15 / Math.max(P.dA, P.dB)));
+    // the metric weights can double a tap, so the explicit scheme needs the
+    // matching headroom back out of the timestep
+    const anis = surfaceOn() ? 2.0 : 1.0;
+    setParamRange('dt', paramById.dt.min, Math.min(paramById.dt.max, 1.15 / (anis * Math.max(P.dA, P.dB))));
   } else {
     free('kill'); free('dB'); free('dt');
   }
@@ -1074,6 +1333,14 @@ function refreshParamUI(id) {
   const d = paramById[id];
   const valEl = document.getElementById('val-' + id);
   if (valEl) valEl.textContent = P[id].toFixed(d.dp);
+}
+function updateLiquidTag() {
+  const el = document.getElementById('liquid-tag');
+  if (!el) return;
+  const bits = [];
+  if (P.lq_amount > 0) bits.push('liquid ' + P.lq_amount.toFixed(2));
+  if (P.pulse > 0) bits.push('pulse ' + P.pulse.toFixed(2));
+  el.textContent = bits.join(' · ');
 }
 function updateModelTag() {
   const tag = document.getElementById('model-tag');
@@ -1125,11 +1392,58 @@ const palettes = [
 ];
 let rampTex = null, currentPalette = 0;
 const hexToRgb = hx => [1, 3, 5].map(i => parseInt(hx.slice(i, i + 2), 16));
+const rgbToHex = c => '#' + c.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
+
+/* the custom palette is four editable stops; a preset seeds it when picked,
+   so "custom" always starts from whatever you were just looking at. */
+let customStops = ['#050807', '#123a4f', '#3fb0c8', '#eafcff'];
+
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h;
+  if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+function hslToRgb(h, s, l) {
+  h = ((h % 1) + 1) % 1;
+  if (s <= 0) { const v = l * 255; return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = t => {
+    t = ((t % 1) + 1) % 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255];
+}
+
+/* hue / saturation / brightness / curve act on the ramp itself, so every
+   preset is a starting point rather than a fixed choice. hue spread fans the
+   hue out along the ramp (a duotone at the extremes), hue drift rotates the
+   whole thing over time. */
+let rampPhase = 0;
+function shapeColor(rgb, t) {
+  let [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
+  h += P.col_hue / 360 + (P.col_spin / 360) * (t - 0.5) * 2.0 + rampPhase;
+  s = Math.min(1, s * P.col_sat);
+  l = Math.min(1, Math.max(0, l + P.col_lift * (0.35 + 0.65 * t)));
+  return hslToRgb(h, s, l);
+}
+
 function buildRamp(stops) {
   const N = 256, data = new Uint8Array(N * 4), cols = stops.map(hexToRgb);
   for (let i = 0; i < N; i++) {
-    const t = i / (N - 1) * (cols.length - 1), j = Math.min(cols.length - 2, Math.floor(t)), f = t - j;
-    for (let c = 0; c < 3; c++) data[i * 4 + c] = Math.round(cols[j][c] * (1 - f) + cols[j + 1][c] * f);
+    const u = Math.pow(i / (N - 1), P.col_gamma);
+    const t = u * (cols.length - 1), j = Math.min(cols.length - 2, Math.floor(t)), f = t - j;
+    const mixed = [0, 1, 2].map(c => cols[j][c] * (1 - f) + cols[j + 1][c] * f);
+    const shaped = shapeColor(mixed, i / (N - 1));
+    for (let c = 0; c < 3; c++) data[i * 4 + c] = Math.round(Math.min(255, Math.max(0, shaped[c])));
     data[i * 4 + 3] = 255;
   }
   if (!rampTex) {
@@ -1143,11 +1457,50 @@ function buildRamp(stops) {
   gl.bindTexture(gl.TEXTURE_2D, rampTex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, N, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
 }
+const activeStops = () => (currentPalette < 0 ? customStops : palettes[currentPalette].stops);
+const refreshRamp = () => buildRamp(activeStops());
+
 function buildPaletteUI() {
   const sel = document.getElementById('palette');
   palettes.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = p.name; sel.appendChild(o); });
-  sel.addEventListener('change', () => { currentPalette = +sel.value; buildRamp(palettes[currentPalette].stops); });
-  buildRamp(palettes[0].stops);
+  const custom = document.createElement('option');
+  custom.value = -1; custom.textContent = 'custom — pick your own'; sel.appendChild(custom);
+  sel.addEventListener('change', () => {
+    const prev = activeStops();
+    currentPalette = +sel.value;
+    // stepping into custom keeps the colours you were just looking at
+    if (currentPalette < 0) customStops = pickFour(prev);
+    document.getElementById('swatches').style.display = currentPalette < 0 ? '' : 'none';
+    syncSwatches();
+    refreshRamp();
+  });
+  buildSwatches();
+  refreshRamp();
+}
+/* a preset has five stops, the editor four — resample rather than drop one */
+function pickFour(stops) {
+  const cols = stops.map(hexToRgb);
+  return [0, 1, 2, 3].map(i => {
+    const t = i / 3 * (cols.length - 1), j = Math.min(cols.length - 2, Math.floor(t)), f = t - j;
+    return rgbToHex([0, 1, 2].map(c => cols[j][c] * (1 - f) + cols[j + 1][c] * f));
+  });
+}
+function buildSwatches() {
+  const wrap = document.getElementById('swatches');
+  const names = ['background', 'shadow', 'mid', 'highlight'];
+  wrap.innerHTML = names.map((n, i) =>
+    '<label class="swatch"><input type="color" id="sw-' + i + '" value="' + customStops[i] + '" ' +
+    'aria-label="' + n + ' colour"><span>' + n + '</span></label>').join('');
+  names.forEach((n, i) => {
+    document.getElementById('sw-' + i).addEventListener('input', e => {
+      customStops[i] = e.target.value; currentPalette = -1;
+      document.getElementById('palette').value = '-1';
+      refreshRamp();
+    });
+  });
+}
+function syncSwatches() {
+  customStops.forEach((c, i) => { const el = document.getElementById('sw-' + i); if (el) el.value = c; });
 }
 
 /* ================================================================
@@ -1227,7 +1580,9 @@ const MODELS = {
       gl.uniform1f(u.u_detail, P.mar_detail); gl.uniform1f(u.u_contrast, P.mar_contrast); gl.uniform1f(u.u_flow, P.mar_flow); } },
   metaballs: { label: 'metaballs 3d',   generative: true, program: () => metaballProg,
     note: 'raymarched 3-d blobs — drag the canvas to orbit them, wheel to zoom. ' +
-          'the field is their surface depth, so relief and contour export follow the real geometry.',
+          'the field is their surface depth, so relief and contour export follow the real geometry. ' +
+          'grown on an object, the blobs become a solid field the surface cuts through: ' +
+          'smaller blob size with a higher count reads best there.',
     render: { colLo: 0.02, colHi: 0.98, relief: 0.30 },
     set(u) {
       updateMetaballs();
@@ -1239,6 +1594,9 @@ const MODELS = {
       gl.uniform1f(u.u_count, Math.min(MB_MAX, P.mb_count));
       gl.uniform1f(u.u_fusion, P.mb_fusion);
       gl.uniform1f(u.u_fov, Math.tan(0.42));
+      // on a surface the object has to sit inside the cluster, whatever size
+      // either of them happens to be
+      if (surfaceOn()) gl.uniform1f(u.u_surfscale, P.pr_wscale * 0.78 * mbBound[3] / surfRadius);
     } },
   stripes:   { label: 'flow lines',     generative: true, program: () => stripesProg,
     note: 'warped wavefronts — fingerprint and topographic contours.',
@@ -1257,6 +1615,7 @@ function renderGenerative() {
   gl.uniform2f(prog.u.u_res, simW, simH);
   gl.uniform1f(prog.u.u_time, simTime);
   gl.uniform1f(prog.u.u_seed, genSeed);
+  setSurfaceUniforms(prog);
   m.set(prog.u);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
@@ -1303,41 +1662,37 @@ const OBJ_VERT = `#version 300 es
 layout(location=0) in vec3 a_pos;
 layout(location=1) in vec3 a_nrm;
 layout(location=2) in vec2 a_uv;
+${FIELD_FX}
 uniform mat4 u_proj, u_view;
-uniform sampler2D u_state;
 uniform float u_disp, u_tile;
-out vec3 v_pos; out vec3 v_nrm; out vec2 v_uv;
+out vec3 v_pos; out vec3 v_nrm; out vec2 v_uv; out float v_swell;
 void main() {
   vec2 uv = a_uv * u_tile;
-  float h = texture(u_state, uv).g;          // field displaces the surface
+  // the wave runs along the object, not the screen, so it travels over the
+  // surface however the camera is turned
+  float swell = pulseAt(a_pos.y * 0.5 + length(a_pos) * 0.5);
+  // displacement rides the softened field, sampled bilinearly: the surface
+  // swells across a whole feature instead of stepping between texels
+  float h = fieldSoft(liquidWarp(uv)) * swell;
   vec4 vp = u_view * vec4(a_pos + a_nrm * (h * u_disp), 1.0);
   v_pos = vp.xyz;
   v_nrm = mat3(u_view) * a_nrm;
   v_uv = uv;
+  v_swell = swell;
   gl_Position = u_proj * vp;
 }`;
 
 const OBJ_FRAG = `#version 300 es
 precision highp float;
-uniform sampler2D u_state;
+${FIELD_FX}
 uniform sampler2D u_ramp;
-uniform vec2  u_texel, u_light;
-uniform float u_lo, u_hi, u_relief, u_shine, u_smooth, u_wire;
-in vec3 v_pos; in vec3 v_nrm; in vec2 v_uv;
+uniform vec2  u_light;
+uniform float u_lo, u_hi, u_relief, u_shine, u_wire, u_disp;
+in vec3 v_pos; in vec3 v_nrm; in vec2 v_uv; in float v_swell;
 out vec4 outColor;
-float rawB(vec2 uv) { return texture(u_state, uv).g; }
-float sampleB(vec2 uv) {
-  if (u_smooth < 0.5) return rawB(uv);
-  vec2 res = 1.0 / u_texel;
-  vec2 p = uv * res - 0.5;
-  vec2 i = floor(p), f = p - i;
-  vec2 t = (i + 0.5) * u_texel;
-  float b00 = rawB(t), b10 = rawB(t + vec2(u_texel.x, 0.0));
-  float b01 = rawB(t + vec2(0.0, u_texel.y)), b11 = rawB(t + u_texel);
-  return mix(mix(b00, b10, f.x), mix(b01, b11, f.x), f.y);
-}
 void main() {
-  float B = sampleB(v_uv);
+  vec2 uv = liquidWarp(v_uv);
+  float B = sampleB(uv) * v_swell;
   float t = smoothstep(u_lo, u_hi, B);
   vec3 col = texture(u_ramp, vec2(t, 0.5)).rgb;
   // wire: lines take the palette colour where the field is strong, and fall
@@ -1350,17 +1705,27 @@ void main() {
 
   vec3 N = normalize(v_nrm);
   if (!gl_FrontFacing) N = -N;
-  // emboss: perturb the surface normal by the field gradient, carried into
-  // world space through a cotangent frame built from the screen derivatives.
-  float bx = sampleB(v_uv + vec2(u_texel.x, 0.0)) - sampleB(v_uv - vec2(u_texel.x, 0.0));
-  float by = sampleB(v_uv + vec2(0.0, u_texel.y)) - sampleB(v_uv - vec2(0.0, u_texel.y));
+  // cotangent frame from the screen derivatives, so a uv-space gradient can be
+  // carried onto the surface without per-vertex tangents
   vec3 dp1 = dFdx(v_pos), dp2 = dFdy(v_pos);
   vec2 du1 = dFdx(v_uv), du2 = dFdy(v_uv);
   vec3 dp2p = cross(dp2, N), dp1p = cross(N, dp1);
   vec3 T = dp2p * du1.x + dp1p * du2.x;
   vec3 Bt = dp2p * du1.y + dp1p * du2.y;
   float inv = inversesqrt(max(max(dot(T, T), dot(Bt, Bt)), 1e-12));
-  N = normalize(N - (T * bx + Bt * by) * inv * u_relief * 22.0);
+
+  // two normal terms, and they are different things. the first is the true
+  // normal of the displaced surface — same softened field the vertex stage
+  // moved on, so shading and geometry agree. the second is the relief emboss,
+  // which carves the sharp field into a surface that never actually moved.
+  vec2 e = u_texel * max(u_dsmooth, 1.0);
+  float sx = (fieldSoft(uv + vec2(e.x, 0.0)) - fieldSoft(uv - vec2(e.x, 0.0))) * v_swell;
+  float sy = (fieldSoft(uv + vec2(0.0, e.y)) - fieldSoft(uv - vec2(0.0, e.y))) * v_swell;
+  float gx = (sampleB(uv + vec2(u_texel.x, 0.0)) - sampleB(uv - vec2(u_texel.x, 0.0))) * v_swell;
+  float gy = (sampleB(uv + vec2(0.0, u_texel.y)) - sampleB(uv - vec2(0.0, u_texel.y))) * v_swell;
+  float dw = u_disp * 26.0 / max(u_dsmooth, 1.0);
+  N = normalize(N - (T * (sx * dw + gx * u_relief * 22.0)
+                   + Bt * (sy * dw + gy * u_relief * 22.0)) * inv);
 
   vec3 L = normalize(vec3(u_light, 0.85));
   vec3 V = normalize(-v_pos);
@@ -1369,6 +1734,11 @@ void main() {
   float spec = pow(clamp(dot(N, H), 0.0, 1.0), 28.0) * u_shine;
   float rim = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0);
   col = col * (0.34 + 0.78 * diff) + spec + col * rim * 0.35;
+  if (u_liquid > 0.0) {
+    float wet = pow(clamp(dot(N, H), 0.0, 1.0), 120.0);
+    vec3 liq = col * (0.80 + 0.55 * t) + vec3(wet * 0.85 + rim * 0.30);
+    col = mix(col, liq, u_liquid);
+  }
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
@@ -1467,7 +1837,63 @@ function buildParametric(shape, nu, nv, wu, wv) {
   };
 }
 
-const project = { on: false, shape: 'sphere', mode: 'both' };
+/* ---- the surface map ----
+   baked on the cpu from shape.f so the map and the mesh can never disagree.
+   256x128 is far finer than the object's curvature, and the map is only ever
+   read for position and for the derivative of position, both smooth. ------ */
+const SURF_W = 256, SURF_H = 128;
+let surfTex = null, surfRef = 1, surfRadius = 1, surfShape = null;
+
+function bakeSurface() {
+  const shape = SHAPES[project.shape];
+  if (!shape) return;
+  const data = new Float32Array(SURF_W * SURF_H * 4);
+  const du = 0.5 / SURF_W, dv = 0.5 / SURF_H;
+  let acc = 0;
+  for (let j = 0; j < SURF_H; j++) {
+    const v = (j + 0.5) / SURF_H;
+    for (let i = 0; i < SURF_W; i++) {
+      const u = (i + 0.5) / SURF_W;
+      const p = shape.f(u, v), k = (j * SURF_W + i) * 4;
+      data[k] = p[0]; data[k + 1] = p[1]; data[k + 2] = p[2]; data[k + 3] = 1;
+      const su = v3len(v3sub(shape.f(u + du, v), shape.f(u - du, v))) / (2 * du);
+      const sv = v3len(v3sub(shape.f(u, Math.min(1, v + dv)), shape.f(u, Math.max(0, v - dv)))) / (2 * dv);
+      acc += Math.sqrt(Math.max(su * sv, 1e-6));
+    }
+  }
+  surfRef = acc / (SURF_W * SURF_H);   // the object's average stretch
+  let far = 0;
+  for (let k = 0; k < data.length; k += 4) far = Math.max(far, Math.hypot(data[k], data[k + 1], data[k + 2]));
+  surfRadius = far || 1;
+  if (!surfTex) {
+    surfTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, surfTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);        // u closes on itself
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  gl.bindTexture(gl.TEXTURE_2D, surfTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, SURF_W, SURF_H, 0, gl.RGBA, gl.FLOAT, data);
+  surfShape = project.shape;
+}
+
+const surfaceOn = () => project.on && project.surface && !!surfTex;
+
+/* every program that can grow a pattern on the object reads the map through
+   texture unit 2; unit 0 stays the field and unit 1 the ramp. */
+function setSurfaceUniforms(prog) {
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, surfTex || rampTex);
+  gl.uniform1i(prog.u.u_surf, 2);
+  gl.uniform2f(prog.u.u_surftexel, 1 / SURF_W, 1 / SURF_H);
+  gl.uniform1f(prog.u.u_surface, surfaceOn() ? 1 : 0);
+  gl.uniform1f(prog.u.u_surfref, surfRef);
+  gl.uniform1f(prog.u.u_surfscale, P.pr_wscale);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+const project = { on: false, surface: true, shape: 'sphere', mode: 'both' };
 let objVao = null, objBuf = null, objCount = 0, objLineCount = 0;
 
 function rebuildObject() {
@@ -1500,6 +1926,7 @@ function rebuildObject() {
   objBuf = [bp, bn, bu, bt, bl];
   objCount = m.tri.length; objLineCount = m.line.length;
   gl.bindVertexArray(vao);
+  if (surfShape !== project.shape) bakeSurface();
 }
 
 /* ---- matrices ---- */
@@ -1547,15 +1974,14 @@ function render3D() {
   gl.uniform1i(objProg.u.u_ramp, 1);
   gl.uniformMatrix4fv(objProg.u.u_proj, false, proj);
   gl.uniformMatrix4fv(objProg.u.u_view, false, view);
-  gl.uniform2f(objProg.u.u_texel, 1 / simW, 1 / simH);
   gl.uniform2f(objProg.u.u_light, Math.cos(ang), Math.sin(ang));
   gl.uniform1f(objProg.u.u_lo, Math.min(P.colLo, P.colHi - 0.001));
   gl.uniform1f(objProg.u.u_hi, P.colHi);
   gl.uniform1f(objProg.u.u_relief, P.relief);
   gl.uniform1f(objProg.u.u_shine, P.shine);
-  gl.uniform1f(objProg.u.u_smooth, smoothDisplay ? 1 : 0);
-  gl.uniform1f(objProg.u.u_tile, P.pr_tile);
+  gl.uniform1f(objProg.u.u_tile, surfaceOn() ? 1.0 : P.pr_tile);
   gl.uniform1f(objProg.u.u_disp, P.pr_disp);
+  setFieldFx(objProg);
 
   gl.bindVertexArray(objVao);
   if (project.mode !== 'wire') {
@@ -1574,6 +2000,15 @@ function render3D() {
   gl.disable(gl.DEPTH_TEST);
 }
 
+function setSurface(on) {
+  project.surface = on;
+  const b = document.getElementById('btn-surface');
+  b.textContent = 'grow on surface: ' + (on ? 'on' : 'off');
+  b.classList.toggle('primary', on);
+  if (on && surfShape !== project.shape) bakeSurface();
+  retuneRanges();
+}
+
 function setProject(on) {
   project.on = on;
   const b = document.getElementById('btn-project');
@@ -1581,6 +2016,8 @@ function setProject(on) {
   b.classList.toggle('primary', on);
   document.getElementById('proj-body').style.display = on ? '' : 'none';
   if (on && !objVao) rebuildObject();
+  if (on && project.surface && surfShape !== project.shape) bakeSurface();
+  retuneRanges();
   document.getElementById('sec-draw').style.display =
     (!on && currentModel === 'reaction') ? '' : 'none';
   updateCursor();
@@ -2033,6 +2470,7 @@ function step() {
   gl.uniform1f(simProg.u.u_biasX, P.biasX);
   gl.uniform1f(simProg.u.u_biasY, P.biasY);
   gl.uniform1i(simProg.u.u_state, 0);
+  setSurfaceUniforms(simProg);
   gl.activeTexture(gl.TEXTURE0);
   const n = Math.round(P.steps);
   for (let i = 0; i < n; i++) {
@@ -2042,6 +2480,18 @@ function step() {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     cur = 1 - cur;
   }
+}
+
+function setFieldFx(prog) {
+  gl.uniform1f(prog.u.u_time, simTime);
+  gl.uniform1f(prog.u.u_liquid, P.lq_amount);
+  gl.uniform1f(prog.u.u_lqflow, P.lq_flow);
+  gl.uniform1f(prog.u.u_pulse, P.pulse);
+  gl.uniform1f(prog.u.u_pulserate, P.pulserate);
+  gl.uniform1f(prog.u.u_pulsewave, P.pulsewave);
+  gl.uniform1f(prog.u.u_dsmooth, P.pr_soft);
+  gl.uniform1f(prog.u.u_smooth, smoothDisplay ? 1 : 0);
+  gl.uniform2f(prog.u.u_texel, 1 / simW, 1 / simH);
 }
 
 function render() {
@@ -2060,14 +2510,14 @@ function render() {
   gl.uniform1f(displayProg.u.u_hi, P.colHi);
   gl.uniform1f(displayProg.u.u_relief, P.relief);
   gl.uniform1f(displayProg.u.u_shine, P.shine);
-  gl.uniform1f(displayProg.u.u_smooth, smoothDisplay ? 1 : 0);
   gl.uniform2f(displayProg.u.u_light, Math.cos(ang), Math.sin(ang));
-  gl.uniform2f(displayProg.u.u_texel, 1 / simW, 1 / simH);
+  setFieldFx(displayProg);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 function frame() {
   if (!paused) simTime += 0.016;
+  if (!paused && P.col_cycle > 0) { rampPhase += P.col_cycle * 0.0022; refreshRamp(); }
   if (!paused && !orbit.dragging && orbitActive()) {
     orbit.yaw += P.pr_spin * 0.016;
   }
@@ -2086,7 +2536,8 @@ function frame() {
     const detail = (currentModel === 'reaction'
       ? '<span class="k">' + Math.round(fps * P.steps) + '</span> steps/s'
       : '<span class="k">' + MODELS[currentModel].label + '</span>')
-      + (project.on ? ' · projected on <span class="k">' + SHAPES[project.shape].label + '</span>' : '');
+      + (project.on ? ' · ' + (surfaceOn() ? 'grown on' : 'projected on') +
+         ' <span class="k">' + SHAPES[project.shape].label + '</span>' : '');
     document.getElementById('status').innerHTML =
       '<span class="k">' + simW + '×' + simH + '</span> field · ' +
       '<span class="k">' + fps + '</span> fps · ' + detail +
@@ -2133,6 +2584,7 @@ document.getElementById('btn-smooth').addEventListener('click', () => {
 document.getElementById('simscale').addEventListener('change', () => allocSim(true));
 document.getElementById('btn-couple').addEventListener('click', () => setCoupled(!coupled));
 document.getElementById('btn-project').addEventListener('click', () => setProject(!project.on));
+document.getElementById('btn-surface').addEventListener('click', () => setSurface(!project.surface));
 document.getElementById('projshape').addEventListener('change', e => { project.shape = e.target.value; rebuildObject(); });
 document.getElementById('projmode').addEventListener('change', e => { project.mode = e.target.value; });
 document.getElementById('paneltoggle').addEventListener('click', togglePanel);
@@ -2158,6 +2610,8 @@ window.addEventListener('keydown', e => {
 });
 
 /* ---------------- boot ---------------- */
+buildParamRows(COLOR_PARAMS, document.getElementById('params-color'), false);
+buildParamRows(LIQUID_PARAMS, document.getElementById('params-liquid'), false);
 buildParamRows(RENDER_PARAMS, document.getElementById('params-render'), false);
 buildParamRows(DRAW_PARAMS, document.getElementById('params-brush'), false);
 buildParamRows(PROJECT_PARAMS, document.getElementById('params-project'), false);

@@ -33,17 +33,61 @@ torus, hyperboloid, cylinder, cone, torus knot**. Drag the canvas to turn it,
 wheel to zoom, `o` to toggle. The simulation keeps running underneath, so a
 reaction-diffusion pattern grows across the surface in real time.
 
+- **Grow on surface** (default) — the pattern is evaluated at points *on the
+  object* rather than wrapped around it from a flat rectangle. A surface map,
+  baked from the same parametric function the mesh is built from, carries the
+  object-space position of every point on the skin. The generative models read
+  that position and evaluate a three-dimensional pattern there — a Voronoi cell
+  is a volume the surface cuts through, a marble vein runs through the solid —
+  so there is no seam and no pinch at the poles. Reaction–diffusion instead
+  reads the local stretch of the parameterisation out of the map and weights
+  its Laplacian by the inverse square, which turns the flat operator into the
+  surface one: a spot comes out the same size wherever it grows, instead of
+  being squeezed thin near a pole. Turn it off for the old behaviour — the flat
+  field projected on, with tiling.
 - **Surface styles** — shaded, wireframe, or both. The wireframe is a
   see-through grid in the style of the classic wireframe-primitive plates; its
   line spacing is independent of how finely the surface is tessellated.
 - **Displacement** — the field pushes vertices along the surface normal, so
-  chemical B becomes actual relief on the object.
-- **Embossing** — the field gradient perturbs the surface normal through a
-  cotangent frame, so the pattern is lit as if it were carved into the object.
-- **Tiling** — repeat the field across the surface, 0.5× to 6×.
+  chemical B becomes actual relief on the object. It rides a softened,
+  bilinearly sampled read of the field (**disp. softness**), so the surface
+  swells across a whole feature instead of stepping between texels, and the
+  shading normal is rebuilt from that same softened field — geometry and light
+  agree rather than fighting.
+- **Embossing** — the sharp field gradient additionally perturbs the surface
+  normal through a cotangent frame, carving detail into a surface that never
+  actually moved.
+- **Tiling** — repeat the field across the surface, 0.5× to 6× (projection
+  mode only; on a surface the field *is* the parameterisation).
 
 PNG and video export capture whatever is on the canvas, so they record the
 projected object; SVG export always traces the flat field.
+
+## Colour
+
+The six palettes are starting points, not the whole choice:
+
+- **Custom palette** — four colour pickers (background, shadow, mid,
+  highlight). Stepping into `custom` seeds them from whichever preset you were
+  looking at.
+- **Hue shift / saturation / brightness** — applied to the ramp itself, so they
+  work on a preset and on a custom palette alike.
+- **Hue spread** — fans the hue out along the ramp, from a single-hue ramp at 0
+  to a duotone at the extremes.
+- **Ramp curve** — where the colours land across the level window.
+- **Hue drift** — rotates the whole ramp over time.
+
+## Liquid and pulse
+
+Two shading controls that read on the flat field and on a projected object:
+
+- **Liquid** — floats the read on a slow rotational flow, then wets the
+  surface: a tight second highlight, a grazing sheen, and a depth tint where
+  the field is thick. **Flow** sets how fast it moves.
+- **Pulse** — a travelling swell in thickness, radial across the flat field and
+  through space on an object, so waves run over the surface however the camera
+  is turned. It drives the displacement too, so a projected object physically
+  breathes. **Pulse rate** and **pulse waves** set its speed and wavelength.
 
 ## Features
 
