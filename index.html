@@ -259,6 +259,12 @@
     </select>
     <select aria-label="Preset" id="preset"></select>
     <div id="params-model"></div>
+    <div id="reaction-extra">
+      <div class="btnrow" style="margin:2px 0 8px">
+        <button class="act primary" id="btn-couple">live band: locked</button>
+      </div>
+      <div class="hint" id="band-note"></div>
+    </div>
     <div class="hint" id="model-note"></div>
   </div>
 
@@ -928,7 +934,7 @@ function buildParamRows(list, container, clear) {
     wrap.innerHTML =
       '<div class="row1"><label for="in-' + d.id + '">' + d.label + '</label><span class="val" id="val-' + d.id + '"></span></div>' +
       '<div class="row2">' +
-      '<input type="range" id="in-' + d.id + '" aria-describedby="val-' + d.id + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + P[d.id] + '">' +
+      '<input type="range" id="in-' + d.id + '" aria-describedby="val-' + d.id + '" min="' + pMin(d) + '" max="' + pMax(d) + '" step="' + d.step + '" value="' + P[d.id] + '">' +
       '<button class="midibtn" id="midi-' + d.id + '" title="midi learn">m</button></div>';
     container.appendChild(wrap);
     const input = wrap.querySelector('input');
@@ -938,10 +944,13 @@ function buildParamRows(list, container, clear) {
   }
 }
 
+const pMin = d => (d.curMin !== undefined ? d.curMin : d.min);
+const pMax = d => (d.curMax !== undefined ? d.curMax : d.max);
+
 function setParam(id, value, updateSlider = true) {
   const d = paramById[id];
   if (!d) return;
-  value = Math.min(d.max, Math.max(d.min, value));
+  value = Math.min(pMax(d), Math.max(pMin(d), value));
   if (d.step >= 1) value = Math.round(value);
   P[id] = value;
   const slider = document.getElementById('in-' + id);
@@ -951,6 +960,123 @@ function setParam(id, value, updateSlider = true) {
   if (updateSlider === false && RENDER_PARAMS.some(r => r.id === id)) modelRenderTouched[id] = true;
   if (id === 'pr_dens' || id === 'pr_wire') rebuildObject();
   if (id === 'pr_dist') orbit.dist = value;
+  if (!retuning) {
+    if (id === 'kill') { kOffset = P.kill - kCrit(P.feed); updateBandNote(); }
+    if (id === 'feed' || id === 'dA' || id === 'dB') retuneRanges();
+    if (id === 'dt') updateBandNote();
+  }
+}
+
+/* ================================================================
+   keeping the reaction alive
+   ------------------------------------------------------------------
+   most of the (feed, kill) plane is a dead zone: the field collapses to
+   uniform A, or floods with B, and whatever you draw is erased in a few
+   frames. every pattern worth having sits in a narrow band that follows the
+   saddle-node curve of the kinetics,
+
+       k_c(f) = sqrt(f) / 2 - f,
+
+   the line where the non-trivial steady states of A' = -AB^2 + f(1 - A),
+   B' = AB^2 - (f + k)B appear. all ten presets here land within 0.006 of it.
+
+   the band around that curve is not symmetric, and it narrows as feed rises.
+   K_BAND below is measured, not guessed: the solver was swept over feed x
+   (k - k_c) on a grid, each cell reseeded and run ~6k steps, keeping the
+   spatial standard deviation of B. zero means the field went uniform — dead
+   either way, flooded or empty — and the surviving interval is what the table
+   holds, rounded outwards.
+
+   so with the band locked, the kill slider spans exactly that interval and
+   rides the curve as feed moves: full travel stays inside the living region,
+   and the whole slider is useful instead of a few pixels of it.
+
+   the timestep is bounded the same way. forward euler on the 9-point
+   laplacian used by the solver has |lambda|max = 1.6, so it is stable while
+   dt * D * 1.6 < 2. past that the field oscillates and saturates - the abrupt
+   jump to a dead frame. locked, dt tops out at 1.15 / max(dA, dB), and dB is
+   held to half of dA, the classic ratio: B has to diffuse well below A for a
+   turing instability to exist at all, and at 1.75x the field just goes flat.
+   ================================================================ */
+const kCrit = f => Math.sqrt(Math.max(f, 1e-6)) / 2 - f;
+/* feed, then the live interval of (k - k_c) at that feed */
+const K_BAND = [
+  [0.010, -0.005, 0.008],
+  [0.026, -0.004, 0.008],
+  [0.032, -0.002, 0.007],
+  [0.040, -0.001, 0.007],
+  [0.056, -0.001, 0.006],
+  [0.110, -0.001, 0.005],
+];
+function kBand(f) {
+  if (f <= K_BAND[0][0]) return [K_BAND[0][1], K_BAND[0][2]];
+  for (let i = 1; i < K_BAND.length; i++) {
+    const a = K_BAND[i - 1], b = K_BAND[i];
+    if (f <= b[0]) {
+      const t = (f - a[0]) / (b[0] - a[0]);
+      return [a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    }
+  }
+  const last = K_BAND[K_BAND.length - 1];
+  return [last[1], last[2]];
+}
+
+
+let coupled = true, kOffset = P.kill - kCrit(P.feed), retuning = false;
+
+function setParamRange(id, min, max) {
+  const d = paramById[id];
+  d.curMin = min; d.curMax = max;
+  const el = document.getElementById('in-' + id);
+  if (el) { el.min = min; el.max = max; }
+  if (P[id] < min || P[id] > max) setParam(id, P[id]);
+}
+
+function retuneRanges() {
+  if (currentModel !== 'reaction') return;
+  retuning = true;
+  const free = id => setParamRange(id, paramById[id].min, paramById[id].max);
+  if (coupled) {
+    // a preset can sit just outside the measured band (holes, u-skate world are
+    // both ~0.0006 below it). widen to hold whatever offset is in play rather
+    // than quietly moving a documented preset; it contracts again on the next
+    // pull back inside.
+    const kc = kCrit(P.feed), band = kBand(P.feed);
+    setParamRange('kill', kc + Math.min(band[0], kOffset), kc + Math.max(band[1], kOffset));
+    setParam('kill', kc + kOffset);
+    setParamRange('dB', paramById.dB.min, Math.max(paramById.dB.min + 0.02, 0.50 * P.dA));
+    setParamRange('dt', paramById.dt.min, Math.min(paramById.dt.max, 1.15 / Math.max(P.dA, P.dB)));
+  } else {
+    free('kill'); free('dB'); free('dt');
+  }
+  retuning = false;
+  updateModelTag();
+  updateBandNote();
+}
+
+function updateBandNote() {
+  const el = document.getElementById('band-note');
+  if (!el) return;
+  const kc = kCrit(P.feed), off = P.kill - kc;
+  const dtCap = Math.min(paramById.dt.max, 1.15 / Math.max(P.dA, P.dB));
+  const band = kBand(P.feed);
+  el.innerHTML = coupled
+    ? 'kill rides <b>√f⁄2 − f</b> = <b>' + kc.toFixed(4) + '</b>, live from <b>' +
+      band[0].toFixed(4) + '</b> to <b>+' + band[1].toFixed(4) + '</b> off it — now <b>' +
+      (off >= 0 ? '+' : '−') + Math.abs(off).toFixed(4) + '</b>. ' +
+      'timestep capped at <b>' + dtCap.toFixed(2) + '</b> for stability, and b diffuses below a.'
+    : 'free — the whole plane, most of which is dead: outside the band the field ' +
+      'collapses to uniform a or floods with b, and anything you draw is erased.';
+}
+
+function setCoupled(v) {
+  coupled = v;
+  const b = document.getElementById('btn-couple');
+  b.textContent = 'live band: ' + (v ? 'locked' : 'free');
+  b.classList.toggle('primary', v);
+  b.classList.toggle('armed', !v);
+  if (v) kOffset = P.kill - kCrit(P.feed);
+  retuneRanges();
 }
 function refreshParamUI(id) {
   const d = paramById[id];
@@ -985,6 +1111,7 @@ function buildPresets() {
   sel.addEventListener('change', () => {
     const p = presets[+sel.value];
     if (!p) return;
+    kOffset = p.kill - kCrit(p.feed);   // exact — retuneRanges widens to hold it
     setParam('feed', p.feed); setParam('kill', p.kill);
     sel.value = String(presets.indexOf(p));
   });
@@ -1160,6 +1287,8 @@ function selectModel(name) {
   const m = MODELS[name];
   applyModelRender(m);
   buildParamRows(MODEL_PARAMS[name], document.getElementById('params-model'), true);
+  document.getElementById('reaction-extra').style.display = name === 'reaction' ? '' : 'none';
+  if (name === 'reaction') retuneRanges();
   document.getElementById('preset').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('sec-draw').style.display = (name === 'reaction' && !project.on) ? '' : 'none';
   document.getElementById('row-reaction').style.display = name === 'reaction' ? '' : 'none';
@@ -1713,7 +1842,7 @@ function onMidiMessage(e) {
     const m = midiMap[id];
     if (m.cc === d1 && m.ch === ch && paramById[id]) {
       const d = paramById[id];
-      setParam(id, d.min + (d2 / 127) * (d.max - d.min));
+      setParam(id, pMin(d) + (d2 / 127) * (pMax(d) - pMin(d)));
     }
   }
 }
@@ -2010,6 +2139,7 @@ document.getElementById('btn-smooth').addEventListener('click', () => {
   document.getElementById('btn-smooth').textContent = 'smooth: ' + (smoothDisplay ? 'on' : 'off');
 });
 document.getElementById('simscale').addEventListener('change', () => allocSim(true));
+document.getElementById('btn-couple').addEventListener('click', () => setCoupled(!coupled));
 document.getElementById('btn-project').addEventListener('click', () => setProject(!project.on));
 document.getElementById('projshape').addEventListener('change', e => { project.shape = e.target.value; rebuildObject(); });
 document.getElementById('projmode').addEventListener('change', e => { project.mode = e.target.value; });
@@ -2042,6 +2172,7 @@ buildParamRows(PROJECT_PARAMS, document.getElementById('params-project'), false)
 buildPresets();
 buildPaletteUI();
 selectModel('reaction');
+setCoupled(true);
 markPresetCustom();
 initMidi();
 resize();

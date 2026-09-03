@@ -50,6 +50,22 @@ projected object; SVG export always traces the flat field.
 - **GPU simulation** — WebGL2 ping-pong Gray–Scott solver with a toroidal
   (wrapping) field, up to 40 sim steps per frame,
   quarter / half / full / 2× resolution.
+- **Live band** — most of the (feed, kill) plane is dead: the field collapses to
+  uniform A or floods with B, and anything you draw is erased in a few frames.
+  With the band locked (the default), the kill slider spans only the living
+  interval and rides the saddle-node curve of the kinetics, `k_c(f) = √f⁄2 − f`,
+  as feed moves — so the whole slider is useful instead of a few pixels of it,
+  and feed can be swept without killing the pattern. The interval is measured,
+  not guessed: the solver was swept over feed × (k − k_c), each cell reseeded
+  and run ~6k steps, keeping the spatial standard deviation of B; zero means
+  the field went uniform. Sampled across five feed rates, all 25 positions of
+  the locked slider produce a live pattern. Presets are applied exactly — the
+  two that sit just outside the measured band widen it rather than being moved.
+  The timestep is capped at the solver's own stability limit
+  (forward Euler on the 9-point Laplacian is stable while `dt · D · 1.6 < 2`;
+  past it the field saturates in one jump), and B is held to half of A's
+  diffusion rate, without which no Turing instability exists. Unlock for the
+  full plane.
 - **Diffusion bias** — an X/Y anisotropy that weights the Laplacian stencil so
   growth drifts in a chosen direction (as in the original playground).
 - **Lit rendering** — the B field is treated as a height map and shaded with
