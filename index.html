@@ -1403,21 +1403,21 @@ const SHAPES = {
   },
   hyperboloid: {
     label: 'hyperboloid', vRatio: 0.45,
-    f: (u, v) => { const a = u * TAU, y = v * 2 - 1, r = Math.sqrt(0.16 + y * y * 0.85);
-      return [r * Math.cos(a), y * 1.15, r * Math.sin(a)]; },
-    axis: (u, v) => [0, (v * 2 - 1) * 1.15, 0],
+    f: (u, v) => { const a = u * TAU, y = v * 2 - 1, r = 0.9 * Math.sqrt(0.16 + y * y * 0.85);
+      return [r * Math.cos(a), y * 0.98, r * Math.sin(a)]; },
+    axis: (u, v) => [0, (v * 2 - 1) * 0.98, 0],
   },
   cylinder: {
     label: 'cylinder', vRatio: 0.45,
     f: (u, v) => { const a = u * TAU, y = v * 2 - 1;
-      return [0.62 * Math.cos(a), y * 1.05, 0.62 * Math.sin(a)]; },
-    axis: (u, v) => [0, (v * 2 - 1) * 1.05, 0],
+      return [0.62 * Math.cos(a), y * 0.96, 0.62 * Math.sin(a)]; },
+    axis: (u, v) => [0, (v * 2 - 1) * 0.96, 0],
   },
   cone: {
     label: 'cone', vRatio: 0.45,
     f: (u, v) => { const a = u * TAU, r = 0.06 + 0.92 * v;
-      return [r * Math.cos(a), (0.5 - v) * 1.7, r * Math.sin(a)]; },
-    axis: (u, v) => [0, (0.5 - v) * 1.7, 0],
+      return [r * Math.cos(a), (0.5 - v) * 1.55, r * Math.sin(a)]; },
+    axis: (u, v) => [0, (0.5 - v) * 1.55, 0],
   },
   knot: {
     label: 'torus knot', vRatio: 0.25,
