@@ -333,8 +333,8 @@
       </select>
       <div class="sublabel">surface</div>
       <select aria-label="Projection surface style" id="projmode">
-        <option value="both" selected>shaded + wireframe</option>
-        <option value="shaded">shaded</option>
+        <option value="shaded" selected>shaded</option>
+        <option value="both">shaded + wireframe</option>
         <option value="wire">wireframe</option>
       </select>
       <div class="btnrow" style="margin-bottom:10px">
@@ -357,6 +357,8 @@
     <h2>Rendering</h2>
     <select aria-label="Colour palette" id="palette"></select>
     <div id="swatches" style="display:none"></div>
+    <div class="sublabel">ramp shape</div>
+    <select aria-label="Colour ramp shape" id="rampmode"></select>
     <div id="params-color"></div>
     <div class="sublabel" style="margin-top:14px">light &amp; level</div>
     <div id="params-render"></div>
@@ -369,9 +371,11 @@
     <h2>Liquid <span class="tag" id="liquid-tag"></span></h2>
     <div id="params-liquid"></div>
     <div class="hint">
-      <b>liquid</b> floats the surface on a slow flow and wets the highlight;
-      <b>pulse</b> sends waves of thickness through the pattern. both read on the
-      flat field and on a projected object.
+      <b>liquid</b> turns the pattern itself to poured metal — it drifts on a slow
+      flow and mirrors a small environment tinted by the palette, while the ground
+      around it stays matte. <b>pulse</b> takes its phase from the field, so the
+      waves run along the pattern rather than over the frame. both read on the flat
+      field and on a projected object.
     </div>
   </div>
 
@@ -409,8 +413,17 @@
     <div class="btnrow">
       <button class="act primary" id="btn-rec">● record video</button>
     </div>
+    <div class="sublabel" style="margin-top:14px">preset file</div>
+    <div class="btnrow">
+      <button class="act" id="btn-cfgsave">save json</button>
+      <button class="act" id="btn-cfgload">load json</button>
+    </div>
+    <input aria-label="Load a preset JSON file" type="file" id="cfgfile" accept=".json,application/json" style="display:none">
     <div class="hint" style="margin-top:10px">
-      video records the live canvas as webm. svg traces the current field with marching squares.
+      png and svg export whatever is on screen — the object when the projection is
+      on, the flat field otherwise. video records the live canvas as webm.
+      <b>save json</b> writes every setting on this panel to a file; <b>load json</b>
+      puts them all back.
     </div>
   </div>
 
@@ -418,7 +431,8 @@
     <h2>Keys</h2>
     <div class="hint">
       <b>space</b> pause · <b>g</b> generate / reseed · <b>c</b> clear · <b>1–4</b> tools<br>
-      <b>e</b> erase · <b>x</b> fill · <b>o</b> 3d projection · <b>s</b> png · <b>v</b> record · <b>h</b> panel
+      <b>e</b> erase · <b>x</b> fill · <b>o</b> 3d projection · <b>s</b> png · <b>v</b> record · <b>h</b> panel<br><br>
+      <b>double-click</b> any slider to put it back where it started.
     </div>
   </div>
 </div>
@@ -469,9 +483,11 @@ void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
    evaluate their pattern at that 3-d point, so a voronoi cell or a marble
    vein is a feature of the object, not of a rectangle wrapped around it —
    no seam, no pinch at the poles. the reaction-diffusion solver instead reads
-   the local stretch of the parameterisation out of it, and weights its
-   laplacian by the inverse square, so a spot is the same size everywhere on
-   the surface however uneven the uv is. -------------------------------- */
+   the local stretch of the parameterisation out of it, weights its laplacian
+   by the inverse square, and where a ring shrinks to nothing it steps over
+   several texels at once instead — so a spot is the same size everywhere on
+   the surface however uneven the uv is. .w carries the ring-averaged
+   u-stretch, which is what that coarsening is keyed to. ---------------- */
 const SURFACE = `
 uniform sampler2D u_surf;
 uniform vec2  u_surftexel;
@@ -485,6 +501,11 @@ vec2 surfStretch(vec2 uv) {
   vec3 pv = surfPos(uv + vec2(0.0, d.y)) - surfPos(uv - vec2(0.0, d.y));
   return vec2(length(pu) / (2.0 * d.x), length(pv) / (2.0 * d.y));
 }
+// the u-stretch averaged along the whole ring, baked into .w. the solver
+// coarsens the field in u by this, and a coarsening has to be identical for
+// every texel of a row or neighbouring texels would disagree about where the
+// cell boundaries are.
+float surfRingU(vec2 uv) { return max(texture(u_surf, uv).w, 1e-4); }
 // where a model should evaluate itself: a point on the object in surface mode,
 // the flat rectangle otherwise
 vec3 domainAt(vec2 uv, vec2 aspect, float scale) {
@@ -501,36 +522,101 @@ ${SURFACE}
 uniform sampler2D u_state;
 uniform vec2  u_texel;
 uniform float u_dA, u_dB, u_feed, u_kill, u_dt, u_biasX, u_biasY;
+uniform float u_vmode;   // 0 the field wraps in v · 1 poles at both ends · 2 open rims
 in vec2 v_uv;
 out vec4 outColor;
-void main() {
-  vec2 c = texture(u_state, v_uv).rg;
 
-  // per-axis diffusion weights. flat, they are 1 and the stencil below is the
-  // usual 9-point laplacian. on a surface, one texel of u covers a different
-  // world distance than one texel of v, and both vary across the object —
-  // weighting by the inverse square of that distance is what turns the uv
-  // laplacian into the surface one, so a spot keeps its size wherever it grows.
-  vec2 w = vec2(1.0);
+// past the v edge the field continues the way the object does: across a pole
+// the surface carries on down the opposite meridian, an open rim has nothing
+// beyond it, a closed tube simply wraps. without this the two poles of a
+// sphere diffuse into each other through the wrap and the pattern tangles.
+vec2 foldV(vec2 uv) {
+  if (u_vmode < 0.5 || (uv.y >= 0.0 && uv.y <= 1.0)) return uv;
+  if (u_vmode > 1.5) return vec2(uv.x, clamp(uv.y, 0.5 * u_texel.y, 1.0 - 0.5 * u_texel.y));
+  return vec2(uv.x + 0.5, uv.y < 0.0 ? -uv.y : 2.0 - uv.y);
+}
+
+// where the ring shrinks — the top of a sphere, the tip of a cone — a whole
+// run of texels in u covers one speck of object, and the field must not carry
+// detail the surface has no room for or it crowds into a pinch. so the row is
+// read off a coarser ring of cells: the reduced grid weather models use at the
+// poles. only the cell centres take part in the dynamics — every other texel
+// is the straight line between two of them, which keeps the field continuous
+// where snapping to the nearest cell would have left stair steps for the
+// emboss to catch and draw as meridian hatching. the blend is smoothstepped
+// rather than linear so the reconstruction has no crease at a cell edge
+// either — a cell centre still reads exactly itself, so the dynamics are
+// untouched; it is only what fills the space between them that changes.
+vec2 ringRead(vec2 uv, float cell) {
+  if (cell <= 1.0001) return texture(u_state, uv).rg;
+  // each ring starts its cells at its own offset. lined up row on row the
+  // cells make a lattice as symmetric as the sphere is, and gray-scott answers
+  // that with a bullseye centred on the pole; staggered, the pattern grows
+  // through the cap the way it grows anywhere else.
+  float row = floor(uv.y / u_texel.y);
+  float o = floor(fract(sin(row * 12.9898) * 43758.5453) * cell);
+  float x = (uv.x / u_texel.x - 0.5 - o) / cell;
+  float i = floor(x), f = x - i;
+  f = f * f * (3.0 - 2.0 * f);
+  vec2 a = texture(u_state, vec2((i * cell + o + 0.5) * u_texel.x, uv.y)).rg;
+  vec2 b = texture(u_state, vec2(((i + 1.0) * cell + o + 0.5) * u_texel.x, uv.y)).rg;
+  return mix(a, b, f);
+}
+vec2 readState(vec2 uv, float cell) { return ringRead(foldV(uv), cell); }
+
+void main() {
+  // per-axis diffusion weights and cell widths. flat, they are 1 and 1 and the
+  // stencil below is the usual 9-point laplacian.
+  vec2 w = vec2(1.0), cell = vec2(1.0);
   if (u_surface > 0.5) {
-    vec2 g = surfStretch(v_uv) * u_texel;              // world units per texel
+    // one reference texel — the world size a texel has on average over the
+    // object. weighting each tap so the stencil equals gref^2 times the true
+    // surface laplacian, everywhere, is what gives a spot the same size
+    // wherever it grows, however uneven the uv happens to be.
     float gref = u_surfref * sqrt(u_texel.x * u_texel.y);
-    vec2 ratio = gref / max(g, vec2(1e-5));
-    w = clamp(ratio * ratio, vec2(0.05), vec2(2.0));
+    vec2 g = surfStretch(v_uv) * u_texel;              // world per texel, here
+    // the cell width has to be one figure for the whole ring or neighbouring
+    // texels would disagree about where a cell begins, so it comes off the
+    // ring average; the weights stay local, which is what keeps a feature the
+    // right size where the ring itself is uneven — along a knot, say.
+    float gring = surfRingU(v_uv) * u_texel.x;
+    // where a texel is smaller than the reference, the stencil steps over
+    // several of them rather than raising the weight. the weight is what the
+    // explicit scheme is stable in, and this way it never rises above its flat
+    // value — no clamp, so nothing is left half-corrected the way a clamp
+    // leaves it. the u cap is the whole row: at the pole the ring really is
+    // one cell, and letting it get there is what leaves no spokes behind.
+    // the innermost ring keeps a dozen cells rather than collapsing to one:
+    // a single cell is a perfectly symmetric seed, and gray-scott answers one
+    // with a bullseye centred on the pole. a dozen sectors of a speck of
+    // surface is asymmetry enough for the pattern to grow through it instead.
+    float ucap = max(4.0, floor(1.0 / (12.0 * u_texel.x)));
+    cell = clamp(vec2(gref / max(gring, 1e-6), gref / max(g.y, 1e-6)),
+                 vec2(1.0), vec2(ucap, 6.0));
+    // whole texels, both ways. a fractional cell would put its boundaries at a
+    // different place in every texel, and the emboss draws that jitter as fine
+    // radial streaks; a whole number of texels lands on real ones and the
+    // reconstruction below comes out periodic and clean.
+    cell = max(vec2(1.0), floor(cell + 0.5));
+    w = min(vec2(1.0), gref / max(g * cell, vec2(1e-6)));
+    w *= w;
   }
+  vec2 e = u_texel * cell;
+  vec2 c = readState(v_uv, cell.x);
+
   float wd = 0.5 * (w.x + w.y);                        // diagonal taps
   float centre = 0.4 * w.x + 0.4 * w.y + 0.2 * wd;     // keeps a flat field flat
 
   // laplacian with directional (anisotropic) bias on the axial taps
   vec2 lap = -centre * c;
-  lap += 0.20 * w.x * (1.0 + u_biasX) * texture(u_state, v_uv + vec2( u_texel.x, 0.0)).rg;
-  lap += 0.20 * w.x * (1.0 - u_biasX) * texture(u_state, v_uv + vec2(-u_texel.x, 0.0)).rg;
-  lap += 0.20 * w.y * (1.0 + u_biasY) * texture(u_state, v_uv + vec2(0.0,  u_texel.y)).rg;
-  lap += 0.20 * w.y * (1.0 - u_biasY) * texture(u_state, v_uv + vec2(0.0, -u_texel.y)).rg;
-  lap += 0.05 * wd * texture(u_state, v_uv + vec2( u_texel.x,  u_texel.y)).rg;
-  lap += 0.05 * wd * texture(u_state, v_uv + vec2(-u_texel.x,  u_texel.y)).rg;
-  lap += 0.05 * wd * texture(u_state, v_uv + vec2( u_texel.x, -u_texel.y)).rg;
-  lap += 0.05 * wd * texture(u_state, v_uv + vec2(-u_texel.x, -u_texel.y)).rg;
+  lap += 0.20 * w.x * (1.0 + u_biasX) * readState(v_uv + vec2( e.x, 0.0), cell.x);
+  lap += 0.20 * w.x * (1.0 - u_biasX) * readState(v_uv + vec2(-e.x, 0.0), cell.x);
+  lap += 0.20 * w.y * (1.0 + u_biasY) * readState(v_uv + vec2(0.0,  e.y), cell.x);
+  lap += 0.20 * w.y * (1.0 - u_biasY) * readState(v_uv + vec2(0.0, -e.y), cell.x);
+  lap += 0.05 * wd * readState(v_uv + vec2( e.x,  e.y), cell.x);
+  lap += 0.05 * wd * readState(v_uv + vec2(-e.x,  e.y), cell.x);
+  lap += 0.05 * wd * readState(v_uv + vec2( e.x, -e.y), cell.x);
+  lap += 0.05 * wd * readState(v_uv + vec2(-e.x, -e.y), cell.x);
 
   float A = c.r, B = c.g;
   float reaction = A * B * B;
@@ -635,6 +721,7 @@ uniform sampler2D u_state;
 uniform vec2  u_texel;
 uniform float u_smooth;
 uniform float u_time, u_liquid, u_lqflow, u_pulse, u_pulserate, u_pulsewave, u_dsmooth;
+uniform float u_gain;   // every light the shader adds on top of the ramp
 
 float rawB(vec2 uv) { return texture(u_state, uv).g; }
 float sampleB(vec2 uv) {
@@ -660,20 +747,59 @@ float fieldSoft(vec2 uv) {
             + sampleB(uv + vec2(e.x, -e.y)) + sampleB(uv - vec2(e.x, -e.y)));
   return s / 10.8;
 }
-// liquid: the read drifts on a slow rotational flow, so the surface reads as
-// something moving under a film rather than a print.
+// liquid: the read itself drifts on a slow rotational flow, so it is the
+// pattern that moves — the shapes crawl and stretch — rather than a film
+// sliding over a print that stays put.
 vec2 liquidWarp(vec2 uv) {
   if (u_liquid <= 0.0) return uv;
   float t = u_time * u_lqflow;
   vec2 w = vec2(sin(uv.y * 7.3 + t * 1.10) + 0.6 * sin(uv.x * 11.7 - t * 0.70),
                 cos(uv.x * 6.9 - t * 0.90) + 0.6 * cos(uv.y * 12.3 + t * 0.60));
-  return uv + w * u_liquid * 0.014;
+  w += 0.45 * vec2(sin(uv.x * 19.1 + t * 1.7), cos(uv.y * 17.7 - t * 1.5));
+  return uv + w * u_liquid * 0.016;
 }
-// pulse: a travelling swell in thickness. d is whatever distance the wave
-// should run along — radial on the flat field, through space on an object.
-float pulseAt(float d) {
+// pulse: a swell in thickness whose phase is the field itself, so the wave
+// runs along the pattern — outward through each blob, down the length of a
+// vein — instead of sweeping over the frame regardless of what is drawn on
+// it. the travel term keeps a little of the geometric distance in the phase so
+// the waves also drift, and the swell is masked to where the pattern is.
+float pulseAt(float travel, float b) {
   if (u_pulse <= 0.0) return 1.0;
-  return 1.0 + u_pulse * 0.45 * sin(6.2831 * (u_time * u_pulserate - d * u_pulsewave));
+  float phase = u_time * u_pulserate - b * u_pulsewave - travel * 0.35;
+  float mask = smoothstep(0.015, 0.16, b);
+  return 1.0 + u_pulse * 0.5 * sin(6.2831 * phase) * mask;
+}
+// how hard the pattern's own gradient bends the liquid normal. a bead of metal
+// turns right through to grazing at its edge, which is what makes it read as a
+// body of liquid rather than as shading painted on the surface underneath.
+float beadSlope() { return 60.0 + 170.0 * u_liquid; }
+// a small fake environment for the metal to mirror. tinted by the top of the
+// palette, so liquid metal in ember is hot brass and in ice is chrome.
+vec3 metalEnv(vec3 r, vec3 tint) {
+  float y = clamp(r.y * 0.5 + 0.5, 0.0, 1.0);
+  vec3 env = mix(vec3(0.015, 0.020, 0.030), vec3(0.44, 0.50, 0.60), smoothstep(0.30, 0.74, y));
+  env += vec3(1.0) * pow(smoothstep(0.62, 1.0, y), 5.0) * 0.85;         // the lamp
+  env += vec3(0.30, 0.24, 0.20) * pow(smoothstep(0.45, 0.0, y), 3.0);   // floor bounce
+  env += vec3(0.55) * pow(abs(sin(r.x * 3.0 + r.z * 2.0)), 24.0);       // bars, so it moves
+  return env * tint;
+}
+// the liquid is the pattern, not the ground it lies on: everything here is
+// masked by t, so the shapes turn to poured metal and the field around them
+// stays the matte surface it was.
+vec3 liquidMetal(vec3 col, vec3 N, vec3 V, vec3 L, float t, vec3 tint) {
+  vec3 R = reflect(-V, N);
+  vec3 H = normalize(L + V);
+  float hard = pow(clamp(dot(N, H), 0.0, 1.0), 200.0);
+  float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 4.0);
+  vec3 metal = col * 0.25
+             + (metalEnv(R, tint) * (0.5 + 0.5 * t) + vec3(hard) * 1.2 + tint * fres * 0.55) * u_gain;
+  return mix(col, metal, u_liquid * smoothstep(0.05, 0.40, t));
+}
+// the palette's own highlight, normalised to full brightness — what the metal
+// reflects, so the effect stays inside whatever colours are in play.
+vec3 rampTint(sampler2D ramp) {
+  vec3 hi = texture(ramp, vec2(0.88, 0.5)).rgb;
+  return hi / max(max(max(hi.r, hi.g), hi.b), 0.001);
 }`;
 
 const DISPLAY_FRAG = `#version 300 es
@@ -686,8 +812,9 @@ in vec2 v_uv;
 out vec4 outColor;
 void main() {
   vec2 uv = liquidWarp(v_uv);
-  float swell = pulseAt(length(v_uv - 0.5));
-  float B = sampleB(uv) * swell;
+  float base = sampleB(uv);
+  float swell = pulseAt(length(v_uv - 0.5), base);
+  float B = base * swell;
   float t = smoothstep(u_lo, u_hi, B);
   vec3 col = texture(u_ramp, vec2(t, 0.5)).rgb;
   // normal from the B height field → diffuse + specular relief
@@ -695,17 +822,18 @@ void main() {
   float by = (sampleB(uv + vec2(0.0, u_texel.y)) - sampleB(uv - vec2(0.0, u_texel.y))) * swell;
   vec3 n = normalize(vec3(-bx * u_relief * 60.0, -by * u_relief * 60.0, 1.0));
   vec3 L = normalize(vec3(u_light, 0.85));
+  vec3 V = vec3(0.0, 0.0, 1.0);
   float diff = clamp(dot(n, L), 0.0, 1.0);
-  vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+  vec3 H = normalize(L + V);
   float spec = pow(clamp(dot(n, H), 0.0, 1.0), 28.0) * u_shine;
-  col = col * (0.5 + 0.7 * diff) + spec;
+  col = col * (0.5 + 0.7 * diff) + spec * u_gain;
   if (u_liquid > 0.0) {
-    // wet: a tight second highlight and a grazing sheen, plus a little depth
-    // tint where the field is thick — light carrying through a body of liquid
-    float wet = pow(clamp(dot(n, H), 0.0, 1.0), 120.0);
-    float sheen = pow(1.0 - clamp(n.z, 0.0, 1.0), 3.0);
-    vec3 liq = col * (0.80 + 0.55 * t) + vec3(wet * 0.85 + sheen * 0.22);
-    col = mix(col, liq, u_liquid);
+    // the bead: the pattern's own softened gradient, steep enough that the rim
+    // of a blob turns to grazing. the ground it sits on keeps its own normal.
+    float sx = (fieldSoft(uv + vec2(u_texel.x, 0.0)) - fieldSoft(uv - vec2(u_texel.x, 0.0))) * swell;
+    float sy = (fieldSoft(uv + vec2(0.0, u_texel.y)) - fieldSoft(uv - vec2(0.0, u_texel.y))) * swell;
+    vec3 bead = normalize(vec3(-sx, -sy, 0.0) * beadSlope() + vec3(0.0, 0.0, 1.0));
+    col = liquidMetal(col, bead, V, L, t, rampTint(u_ramp));
   }
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
@@ -1053,10 +1181,20 @@ function makeTex(w, h, internal, wrap) {
 }
 const makeField = (w, h) => makeTex(w, h, stateInternalFormat, gl.REPEAT);
 
+/* the grid keeps the texel budget the resolution setting asks for, but takes
+   its shape from whatever the field is being grown on. a torus knot is seven
+   times longer along its length than round its tube; on a square-ish grid a
+   texel there covers seven times as much object along u as it does around v,
+   and the pattern comes out drawn out along the knot however carefully the
+   solver weights its laplacian. shaped to the object, a texel is a texel. */
 function allocSim(preserve) {
   const scale = parseFloat(document.getElementById('simscale').value);
-  const w = Math.max(64, Math.min(2048, Math.round(canvas.width  * scale)));
-  const h = Math.max(64, Math.min(2048, Math.round(canvas.height * scale)));
+  const budget = Math.max(1, canvas.width * scale) * Math.max(1, canvas.height * scale);
+  const aspect = surfaceOn()
+    ? Math.min(10, Math.max(0.1, surfAspect))
+    : canvas.width / Math.max(1, canvas.height);
+  const w = Math.max(64, Math.min(2048, Math.round(Math.sqrt(budget * aspect))));
+  const h = Math.max(64, Math.min(2048, Math.round(Math.sqrt(budget / aspect))));
   if (w === simW && h === simH && fields) return;
   const old = fields;
   simW = w; simH = h;
@@ -1102,7 +1240,7 @@ const RENDER_PARAMS = [
 const COLOR_PARAMS = [
   { id: 'col_hue',   label: 'hue shift',    min: -180,  max: 180,   step: 1,     value: 0,    dp: 0 },
   { id: 'col_sat',   label: 'saturation',   min: 0.00,  max: 2.00,  step: 0.01,  value: 1.00, dp: 2 },
-  { id: 'col_lift',  label: 'brightness',   min: -0.35, max: 0.35,  step: 0.01,  value: 0.00, dp: 2 },
+  { id: 'col_lift',  label: 'brightness',   min: -1.00, max: 0.35,  step: 0.01,  value: 0.00, dp: 2 },
   { id: 'col_gamma', label: 'ramp curve',   min: 0.35,  max: 2.60,  step: 0.01,  value: 1.00, dp: 2 },
   { id: 'col_spin',  label: 'hue spread',   min: -120,  max: 120,   step: 1,     value: 0,    dp: 0 },
   { id: 'col_cycle', label: 'hue drift',    min: 0.00,  max: 1.00,  step: 0.01,  value: 0.00, dp: 2 },
@@ -1130,8 +1268,8 @@ const PROJECT_PARAMS = [
 ];
 const MODEL_PARAMS = {
   reaction: [
-    { id: 'feed',   label: 'feed rate',     min: 0.010, max: 0.110, step: 0.0001, value: 0.0367, dp: 4 },
-    { id: 'kill',   label: 'kill rate',     min: 0.040, max: 0.075, step: 0.0001, value: 0.0649, dp: 4 },
+    { id: 'feed',   label: 'feed rate',     min: 0.010, max: 0.110, step: 0.0001, value: 0.0545, dp: 4 },
+    { id: 'kill',   label: 'kill rate',     min: 0.040, max: 0.075, step: 0.0001, value: 0.0620, dp: 4 },
     { id: 'dA',     label: 'diffusion a',   min: 0.60,  max: 1.40,  step: 0.001,  value: 1.00,   dp: 3 },
     { id: 'dB',     label: 'diffusion b',   min: 0.15,  max: 0.80,  step: 0.001,  value: 0.50,   dp: 3 },
     { id: 'biasX',  label: 'bias x',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2 },
@@ -1184,7 +1322,10 @@ function buildParamRows(list, container, clear) {
       '<button class="midibtn" id="midi-' + d.id + '" title="midi learn">m</button></div>';
     container.appendChild(wrap);
     const input = wrap.querySelector('input');
+    input.title = 'double-click to reset to ' + d.value;
     input.addEventListener('input', () => setParam(d.id, parseFloat(input.value), false));
+    // double-click snaps a slider back to the value it started at
+    input.addEventListener('dblclick', () => setParam(d.id, d.value));
     wrap.querySelector('.midibtn').addEventListener('click', e => midiLearnToggle(d.id, e.altKey));
     refreshParamUI(d.id);
   }
@@ -1293,10 +1434,10 @@ function retuneRanges() {
     setParamRange('kill', kc + Math.min(band[0], kOffset), kc + Math.max(band[1], kOffset));
     setParam('kill', kc + kOffset);
     setParamRange('dB', paramById.dB.min, Math.max(paramById.dB.min + 0.02, 0.50 * P.dA));
-    // the metric weights can double a tap, so the explicit scheme needs the
-    // matching headroom back out of the timestep
-    const anis = surfaceOn() ? 2.0 : 1.0;
-    setParamRange('dt', paramById.dt.min, Math.min(paramById.dt.max, 1.15 / (anis * Math.max(P.dA, P.dB))));
+    // the surface metric never raises a tap above its flat weight — it widens
+    // the stencil instead — so the timestep keeps the same headroom on an
+    // object as it has on the flat field
+    setParamRange('dt', paramById.dt.min, Math.min(paramById.dt.max, 1.15 / Math.max(P.dA, P.dB)));
   } else {
     free('kill'); free('dB'); free('dt');
   }
@@ -1389,8 +1530,26 @@ const palettes = [
   { name: 'violet',   stops: ['#070510', '#241145', '#6b2e9e', '#c77dff', '#f4e9ff'] },
   { name: 'mono',     stops: ['#0a0b0e', '#33363d', '#83878f', '#d6dae2', '#ffffff'] },
   { name: 'paper',    stops: ['#f4f1ea', '#c9c2b2', '#6f6754', '#33302a', '#0d0c0a'] },
+  { name: 'magma',    stops: ['#050308', '#2a0b3d', '#9b1b5a', '#f2643c', '#ffeaa8'] },
+  { name: 'copper',   stops: ['#0a0603', '#341507', '#8a4218', '#e08a3c', '#ffe2b0'] },
+  { name: 'jade',     stops: ['#03080a', '#0c3230', '#1d7a63', '#7fd6a2', '#f2fff4'] },
+  { name: 'lagoon',   stops: ['#02070c', '#0a3348', '#1c7f8f', '#6fe0cf', '#eafff8'] },
+  { name: 'sakura',   stops: ['#0b0510', '#3b1030', '#a13a6b', '#f39ab8', '#fff0f5'] },
+  { name: 'oil slick',stops: ['#04040a', '#151f4d', '#7a2d8f', '#2fb6c9', '#f2f7ff'] },
+  { name: 'gold',     stops: ['#080602', '#2e2005', '#8a6a12', '#e0bb46', '#fff4c2'] },
+  { name: 'blueprint',stops: ['#071a33', '#0e3a6b', '#2f79b8', '#9fd0f5', '#ffffff'] },
+  { name: 'sand',     stops: ['#f7f2e6', '#d9c9a3', '#a08a5f', '#4d4130', '#12100b'] },
 ];
-let rampTex = null, currentPalette = 0;
+/* how the ramp is laid across the level window. smooth is the plain sweep;
+   the rest re-read the same colours, so every palette gets four looks. */
+const RAMP_MODES = {
+  smooth:  { label: 'smooth',           f: t => t },
+  mirror:  { label: 'mirrored',         f: t => 1 - Math.abs(2 * t - 1) },
+  repeat:  { label: 'repeated — 2×',    f: t => (t * 2) % 1 },
+  bands:   { label: 'banded — 7 steps', f: t => Math.min(1, Math.floor(t * 7) / 6) },
+};
+let rampMode = 'smooth';
+let rampTex = null, currentPalette = 0, rampBg = [0, 0, 0];
 const hexToRgb = hx => [1, 3, 5].map(i => parseInt(hx.slice(i, i + 2), 16));
 const rgbToHex = c => '#' + c.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
 
@@ -1432,14 +1591,21 @@ function shapeColor(rgb, t) {
   let [h, s, l] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
   h += P.col_hue / 360 + (P.col_spin / 360) * (t - 0.5) * 2.0 + rampPhase;
   s = Math.min(1, s * P.col_sat);
-  l = Math.min(1, Math.max(0, l + P.col_lift * (0.35 + 0.65 * t)));
+  // up, brightness lifts; down it multiplies, so the whole ramp — background
+  // included — really does go dark, all the way to black at −1. adding a
+  // negative lift only ever pushed the mid-tones about and left a bright
+  // palette bright.
+  l = P.col_lift >= 0
+    ? Math.min(1, l + P.col_lift * (0.35 + 0.65 * t))
+    : l * Math.max(0, 1 + P.col_lift);
   return hslToRgb(h, s, l);
 }
 
 function buildRamp(stops) {
   const N = 256, data = new Uint8Array(N * 4), cols = stops.map(hexToRgb);
+  const shape = (RAMP_MODES[rampMode] || RAMP_MODES.smooth).f;
   for (let i = 0; i < N; i++) {
-    const u = Math.pow(i / (N - 1), P.col_gamma);
+    const u = Math.pow(shape(i / (N - 1)), P.col_gamma);
     const t = u * (cols.length - 1), j = Math.min(cols.length - 2, Math.floor(t)), f = t - j;
     const mixed = [0, 1, 2].map(c => cols[j][c] * (1 - f) + cols[j + 1][c] * f);
     const shaped = shapeColor(mixed, i / (N - 1));
@@ -1456,6 +1622,9 @@ function buildRamp(stops) {
   }
   gl.bindTexture(gl.TEXTURE_2D, rampTex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, N, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+  // the ground the 3-d object sits against is the ramp's own bottom, so it
+  // follows a custom palette and every colour control, darkening included
+  rampBg = [data[0] / 255, data[1] / 255, data[2] / 255];
 }
 const activeStops = () => (currentPalette < 0 ? customStops : palettes[currentPalette].stops);
 const refreshRamp = () => buildRamp(activeStops());
@@ -1474,6 +1643,14 @@ function buildPaletteUI() {
     syncSwatches();
     refreshRamp();
   });
+  const modes = document.getElementById('rampmode');
+  for (const k in RAMP_MODES) {
+    const o = document.createElement('option');
+    o.value = k; o.textContent = RAMP_MODES[k].label;
+    if (k === rampMode) o.selected = true;
+    modes.appendChild(o);
+  }
+  modes.addEventListener('change', () => { rampMode = modes.value; refreshRamp(); });
   buildSwatches();
   refreshRamp();
 }
@@ -1665,20 +1842,21 @@ layout(location=2) in vec2 a_uv;
 ${FIELD_FX}
 uniform mat4 u_proj, u_view;
 uniform float u_disp, u_tile;
-out vec3 v_pos; out vec3 v_nrm; out vec2 v_uv; out float v_swell;
+out vec3 v_pos; out vec3 v_nrm; out vec2 v_uv; out float v_travel;
 void main() {
-  vec2 uv = a_uv * u_tile;
-  // the wave runs along the object, not the screen, so it travels over the
-  // surface however the camera is turned
-  float swell = pulseAt(a_pos.y * 0.5 + length(a_pos) * 0.5);
+  vec2 uv = liquidWarp(a_uv * u_tile);
+  // how far the wave has run through space, so it travels over the object
+  // however the camera is turned; the pattern supplies the rest of the phase
+  float travel = a_pos.y * 0.5 + length(a_pos) * 0.5;
   // displacement rides the softened field, sampled bilinearly: the surface
   // swells across a whole feature instead of stepping between texels
-  float h = fieldSoft(liquidWarp(uv)) * swell;
+  float base = fieldSoft(uv);
+  float h = base * pulseAt(travel, base);
   vec4 vp = u_view * vec4(a_pos + a_nrm * (h * u_disp), 1.0);
   v_pos = vp.xyz;
   v_nrm = mat3(u_view) * a_nrm;
-  v_uv = uv;
-  v_swell = swell;
+  v_uv = a_uv * u_tile;
+  v_travel = travel;
   gl_Position = u_proj * vp;
 }`;
 
@@ -1688,11 +1866,13 @@ ${FIELD_FX}
 uniform sampler2D u_ramp;
 uniform vec2  u_light;
 uniform float u_lo, u_hi, u_relief, u_shine, u_wire, u_disp;
-in vec3 v_pos; in vec3 v_nrm; in vec2 v_uv; in float v_swell;
+in vec3 v_pos; in vec3 v_nrm; in vec2 v_uv; in float v_travel;
 out vec4 outColor;
 void main() {
   vec2 uv = liquidWarp(v_uv);
-  float B = sampleB(uv) * v_swell;
+  float base = sampleB(uv);
+  float swell = pulseAt(v_travel, base);
+  float B = base * swell;
   float t = smoothstep(u_lo, u_hi, B);
   vec3 col = texture(u_ramp, vec2(t, 0.5)).rgb;
   // wire: lines take the palette colour where the field is strong, and fall
@@ -1719,25 +1899,27 @@ void main() {
   // moved on, so shading and geometry agree. the second is the relief emboss,
   // which carves the sharp field into a surface that never actually moved.
   vec2 e = u_texel * max(u_dsmooth, 1.0);
-  float sx = (fieldSoft(uv + vec2(e.x, 0.0)) - fieldSoft(uv - vec2(e.x, 0.0))) * v_swell;
-  float sy = (fieldSoft(uv + vec2(0.0, e.y)) - fieldSoft(uv - vec2(0.0, e.y))) * v_swell;
-  float gx = (sampleB(uv + vec2(u_texel.x, 0.0)) - sampleB(uv - vec2(u_texel.x, 0.0))) * v_swell;
-  float gy = (sampleB(uv + vec2(0.0, u_texel.y)) - sampleB(uv - vec2(0.0, u_texel.y))) * v_swell;
+  float sx = (fieldSoft(uv + vec2(e.x, 0.0)) - fieldSoft(uv - vec2(e.x, 0.0))) * swell;
+  float sy = (fieldSoft(uv + vec2(0.0, e.y)) - fieldSoft(uv - vec2(0.0, e.y))) * swell;
+  float gx = (sampleB(uv + vec2(u_texel.x, 0.0)) - sampleB(uv - vec2(u_texel.x, 0.0))) * swell;
+  float gy = (sampleB(uv + vec2(0.0, u_texel.y)) - sampleB(uv - vec2(0.0, u_texel.y))) * swell;
   float dw = u_disp * 26.0 / max(u_dsmooth, 1.0);
-  N = normalize(N - (T * (sx * dw + gx * u_relief * 22.0)
-                   + Bt * (sy * dw + gy * u_relief * 22.0)) * inv);
+  vec3 Ns = normalize(N - (T * (sx * dw + gx * u_relief * 22.0)
+                         + Bt * (sy * dw + gy * u_relief * 22.0)) * inv);
 
   vec3 L = normalize(vec3(u_light, 0.85));
   vec3 V = normalize(-v_pos);
-  float diff = clamp(dot(N, L), 0.0, 1.0);
+  float diff = clamp(dot(Ns, L), 0.0, 1.0);
   vec3 H = normalize(L + V);
-  float spec = pow(clamp(dot(N, H), 0.0, 1.0), 28.0) * u_shine;
-  float rim = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0);
-  col = col * (0.34 + 0.78 * diff) + spec + col * rim * 0.35;
+  float spec = pow(clamp(dot(Ns, H), 0.0, 1.0), 28.0) * u_shine;
+  float rim = pow(1.0 - clamp(dot(Ns, V), 0.0, 1.0), 3.0);
+  col = col * (0.34 + 0.78 * diff) + (spec + col * rim * 0.35) * u_gain;
   if (u_liquid > 0.0) {
-    float wet = pow(clamp(dot(N, H), 0.0, 1.0), 120.0);
-    vec3 liq = col * (0.80 + 0.55 * t) + vec3(wet * 0.85 + rim * 0.30);
-    col = mix(col, liq, u_liquid);
+    // the bead sits on the object: the pattern's gradient bends the normal far
+    // harder than the emboss does, and only where the pattern is, so the metal
+    // is the shape itself and the skin under it stays matte.
+    vec3 bead = normalize(Ns - (T * sx + Bt * sy) * inv * beadSlope() / max(u_dsmooth, 1.0));
+    col = liquidMetal(col, bead, V, L, t, rampTint(u_ramp));
   }
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
@@ -1750,48 +1932,99 @@ function knotPoint(u) {
   const a = u * TAU, r = 0.62 + 0.26 * Math.cos(3 * a);
   return [r * Math.cos(2 * a), 0.28 * Math.sin(3 * a), r * Math.sin(2 * a)];
 }
+const knotTangent = u => v3norm(v3sub(knotPoint(u + 1e-4), knotPoint(u - 1e-4)));
+
+/* ---- the knot's tube frame ----
+   a frenet frame turns over at every inflection of the curve and is undefined
+   wherever the curvature vanishes. sweeping a tube along one wrings the
+   surface round on itself: the uv shears, the pattern comes out stretched and
+   raked, and the mesh folds through itself where the frame flips. so the frame
+   is transported along the curve instead — double reflection, which introduces
+   no twist of its own — and the mismatch left when it comes back round is then
+   spread evenly over the loop so the frame closes up periodic in u. what the
+   tube carries after that is the least twist a closed tube can have. --- */
+const KNOT_N = 1024;
+const knotN = new Float32Array(KNOT_N * 3);
+(function buildKnotFrame() {
+  const pts = [], tans = [];
+  for (let i = 0; i < KNOT_N; i++) {
+    const u = i / KNOT_N;
+    pts.push(knotPoint(u)); tans.push(knotTangent(u));
+  }
+  let r = v3cross(tans[0], [0, 1, 0]);
+  if (v3len(r) < 1e-6) r = v3cross(tans[0], [1, 0, 0]);
+  r = v3norm(r);
+  const frames = [r];
+  const reflect = (x, v, c) => { const k = 2 * v3dot(v, x) / c; return [x[0] - k * v[0], x[1] - k * v[1], x[2] - k * v[2]]; };
+  for (let i = 1; i <= KNOT_N; i++) {
+    const j = i % KNOT_N, p = i - 1;
+    const v1 = v3sub(pts[j], pts[p]), c1 = Math.max(v3dot(v1, v1), 1e-12);
+    const rL = reflect(frames[p], v1, c1), tL = reflect(tans[p], v1, c1);
+    const v2 = v3sub(tans[j], tL), c2 = Math.max(v3dot(v2, v2), 1e-12);
+    frames.push(v3norm(reflect(rL, v2, c2)));
+  }
+  // the residual twist after one lap, spread back over the whole loop
+  const last = frames[KNOT_N], t0 = tans[0], b0 = v3cross(t0, frames[0]);
+  const twist = Math.atan2(v3dot(last, b0), v3dot(last, frames[0]));
+  for (let i = 0; i < KNOT_N; i++) {
+    const a = -twist * i / KNOT_N, ca = Math.cos(a), sa = Math.sin(a);
+    const n = frames[i], b = v3cross(tans[i], n);
+    knotN[i * 3]     = n[0] * ca + b[0] * sa;
+    knotN[i * 3 + 1] = n[1] * ca + b[1] * sa;
+    knotN[i * 3 + 2] = n[2] * ca + b[2] * sa;
+  }
+})();
+/* catmull-rom through the transported normals: the mesh differentiates f, so a
+   merely continuous frame would show its sample boundaries as banding */
+function knotFrame(u) {
+  const x = (((u % 1) + 1) % 1) * KNOT_N;
+  const i = Math.floor(x), f = x - i;
+  const g = (k, c) => knotN[(((i + k) % KNOT_N) + KNOT_N) % KNOT_N * 3 + c];
+  const n = [0, 1, 2].map(c => {
+    const p0 = g(-1, c), p1 = g(0, c), p2 = g(1, c), p3 = g(2, c);
+    return 0.5 * ((2 * p1) + (-p0 + p2) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f +
+                  (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f);
+  });
+  const T = knotTangent(u), d = v3dot(n, T);
+  const N = v3norm([n[0] - T[0] * d, n[1] - T[1] * d, n[2] - T[2] * d]);
+  return [T, N, v3cross(T, N)];
+}
 const SHAPES = {
   sphere: {
-    label: 'sphere', vRatio: 0.5,
+    label: 'sphere', vRatio: 0.5, vEdge: 'pole',
     f: (u, v) => { const a = u * TAU, b = v * Math.PI;
       return [Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)]; },
     axis: () => [0, 0, 0],
   },
   torus: {
-    label: 'torus', vRatio: 0.4,
+    label: 'torus', vRatio: 0.4, vEdge: 'wrap',
     f: (u, v) => { const a = u * TAU, b = v * TAU, R = 0.78, r = 0.34;
       return [(R + r * Math.cos(b)) * Math.cos(a), r * Math.sin(b), (R + r * Math.cos(b)) * Math.sin(a)]; },
     axis: u => { const a = u * TAU; return [0.78 * Math.cos(a), 0, 0.78 * Math.sin(a)]; },
   },
   hyperboloid: {
-    label: 'hyperboloid', vRatio: 0.45,
+    label: 'hyperboloid', vRatio: 0.45, vEdge: 'open',
     f: (u, v) => { const a = u * TAU, y = v * 2 - 1, r = 0.9 * Math.sqrt(0.16 + y * y * 0.85);
       return [r * Math.cos(a), y * 0.98, r * Math.sin(a)]; },
     axis: (u, v) => [0, (v * 2 - 1) * 0.98, 0],
   },
   cylinder: {
-    label: 'cylinder', vRatio: 0.45,
+    label: 'cylinder', vRatio: 0.45, vEdge: 'open',
     f: (u, v) => { const a = u * TAU, y = v * 2 - 1;
       return [0.62 * Math.cos(a), y * 0.96, 0.62 * Math.sin(a)]; },
     axis: (u, v) => [0, (v * 2 - 1) * 0.96, 0],
   },
   cone: {
-    label: 'cone', vRatio: 0.45,
+    label: 'cone', vRatio: 0.45, vEdge: 'open',
     f: (u, v) => { const a = u * TAU, r = 0.06 + 0.92 * v;
       return [r * Math.cos(a), (0.5 - v) * 1.55, r * Math.sin(a)]; },
     axis: (u, v) => [0, (0.5 - v) * 1.55, 0],
   },
   knot: {
-    label: 'torus knot', vRatio: 0.25,
+    label: 'torus knot', vRatio: 0.25, vEdge: 'wrap',
     f: (u, v) => {
-      const h = 1e-3;
-      const c = knotPoint(u), c1 = knotPoint(u + h), c0 = knotPoint(u - h);
-      const T = v3norm(v3sub(c1, c0));
-      let N = [c1[0] + c0[0] - 2 * c[0], c1[1] + c0[1] - 2 * c[1], c1[2] + c0[2] - 2 * c[2]];
-      const d = v3dot(N, T);
-      N = v3norm([N[0] - T[0] * d, N[1] - T[1] * d, N[2] - T[2] * d]);
-      if (!isFinite(N[0]) || v3len(N) < 0.5) N = v3norm(v3cross(T, [0, 1, 0]));
-      const Bn = v3cross(T, N), a = v * TAU, rt = 0.17;
+      const c = knotPoint(u), fr = knotFrame(u);
+      const N = fr[1], Bn = fr[2], a = v * TAU, rt = 0.17;
       const ca = Math.cos(a), sa = Math.sin(a);
       return [c[0] + rt * (ca * N[0] + sa * Bn[0]),
               c[1] + rt * (ca * N[1] + sa * Bn[1]),
@@ -1842,26 +2075,37 @@ function buildParametric(shape, nu, nv, wu, wv) {
    256x128 is far finer than the object's curvature, and the map is only ever
    read for position and for the derivative of position, both smooth. ------ */
 const SURF_W = 256, SURF_H = 128;
-let surfTex = null, surfRef = 1, surfRadius = 1, surfShape = null;
+let surfTex = null, surfRef = 1, surfRadius = 1, surfShape = null, surfAspect = 1;
 
 function bakeSurface() {
   const shape = SHAPES[project.shape];
   if (!shape) return;
   const data = new Float32Array(SURF_W * SURF_H * 4);
   const du = 0.5 / SURF_W, dv = 0.5 / SURF_H;
-  let acc = 0;
+  let acc = 0, accU = 0, accV = 0;
   for (let j = 0; j < SURF_H; j++) {
     const v = (j + 0.5) / SURF_H;
+    let ring = 0;
     for (let i = 0; i < SURF_W; i++) {
       const u = (i + 0.5) / SURF_W;
       const p = shape.f(u, v), k = (j * SURF_W + i) * 4;
-      data[k] = p[0]; data[k + 1] = p[1]; data[k + 2] = p[2]; data[k + 3] = 1;
+      data[k] = p[0]; data[k + 1] = p[1]; data[k + 2] = p[2];
       const su = v3len(v3sub(shape.f(u + du, v), shape.f(u - du, v))) / (2 * du);
       const sv = v3len(v3sub(shape.f(u, Math.min(1, v + dv)), shape.f(u, Math.max(0, v - dv)))) / (2 * dv);
+      data[k + 3] = su;
+      ring += su;
+      accU += su; accV += sv;
       acc += Math.sqrt(Math.max(su * sv, 1e-6));
     }
+    // the solver coarsens u by the ring, so it needs one figure per ring:
+    // per-texel it would disagree with itself about where a cell begins.
+    ring = Math.max(ring / SURF_W, 1e-4);
+    for (let i = 0; i < SURF_W; i++) data[(j * SURF_W + i) * 4 + 3] = ring;
   }
   surfRef = acc / (SURF_W * SURF_H);   // the object's average stretch
+  // how much longer the object is along u than around v — what the sim grid is
+  // shaped to, so a texel covers about the same patch of surface either way
+  surfAspect = Math.max(1e-3, accU) / Math.max(1e-3, accV);
   let far = 0;
   for (let k = 0; k < data.length; k += 4) far = Math.max(far, Math.hypot(data[k], data[k + 1], data[k + 2]));
   surfRadius = far || 1;
@@ -1879,6 +2123,8 @@ function bakeSurface() {
 }
 
 const surfaceOn = () => project.on && project.surface && !!surfTex;
+/* how the field continues past the v edge of each object — see foldV */
+const V_EDGE = { wrap: 0, pole: 1, open: 2 };
 
 /* every program that can grow a pattern on the object reads the map through
    texture unit 2; unit 0 stays the field and unit 1 the ramp. */
@@ -1890,10 +2136,11 @@ function setSurfaceUniforms(prog) {
   gl.uniform1f(prog.u.u_surface, surfaceOn() ? 1 : 0);
   gl.uniform1f(prog.u.u_surfref, surfRef);
   gl.uniform1f(prog.u.u_surfscale, P.pr_wscale);
+  gl.uniform1f(prog.u.u_vmode, surfaceOn() ? V_EDGE[SHAPES[project.shape].vEdge] : 0);
   gl.activeTexture(gl.TEXTURE0);
 }
 
-const project = { on: false, surface: true, shape: 'sphere', mode: 'both' };
+const project = { on: false, surface: true, shape: 'sphere', mode: 'shaded' };
 let objVao = null, objBuf = null, objCount = 0, objLineCount = 0;
 
 function rebuildObject() {
@@ -1946,16 +2193,34 @@ function matLookAt(eye, center, up) {
   ]);
 }
 
-function render3D() {
-  if (!objVao) rebuildObject();
-  const bg = hexToRgb(palettes[currentPalette].stops[0]).map(c => c / 255);
-  const eye = orbitEye(orbit.dist);
+/* the canvas runs under the panel, so the frustum is shifted to keep the
+   object centred in the part of it you can actually see. the svg export needs
+   the very same matrix, or the vector trace would not line up with the frame
+   it came from. */
+function projMatrix() {
   const proj = matPerspective(0.84, canvas.width / Math.max(1, canvas.height), 0.05, 60);
-  // the canvas runs under the panel, so shift the frustum to keep the object
-  // centred in the part of it you can actually see.
   const panel = document.getElementById('panel');
   const hidden = panel.classList.contains('hidden');
   proj[8] = hidden ? 0 : Math.min(0.6, panel.offsetWidth / Math.max(1, canvas.clientWidth));
+  return proj;
+}
+/* object space → pixels, through the same view and projection the frame used */
+function projectPoint(p, view, proj, w, h) {
+  const vx = view[0] * p[0] + view[4] * p[1] + view[8]  * p[2] + view[12];
+  const vy = view[1] * p[0] + view[5] * p[1] + view[9]  * p[2] + view[13];
+  const vz = view[2] * p[0] + view[6] * p[1] + view[10] * p[2] + view[14];
+  const cw = proj[3] * vx + proj[7] * vy + proj[11] * vz + proj[15];
+  if (cw <= 1e-4) return null;
+  const cx = proj[0] * vx + proj[4] * vy + proj[8]  * vz + proj[12];
+  const cy = proj[1] * vx + proj[5] * vy + proj[9]  * vz + proj[13];
+  return [(cx / cw * 0.5 + 0.5) * w, (1 - (cy / cw * 0.5 + 0.5)) * h];
+}
+
+function render3D() {
+  if (!objVao) rebuildObject();
+  const bg = rampBg;
+  const eye = orbitEye(orbit.dist);
+  const proj = projMatrix();
   const view = matLookAt(eye, [0, 0, 0], [0, 1, 0]);
   const ang = P.light * Math.PI / 180;
 
@@ -2006,6 +2271,7 @@ function setSurface(on) {
   b.textContent = 'grow on surface: ' + (on ? 'on' : 'off');
   b.classList.toggle('primary', on);
   if (on && surfShape !== project.shape) bakeSurface();
+  allocSim(true);
   retuneRanges();
 }
 
@@ -2017,6 +2283,7 @@ function setProject(on) {
   document.getElementById('proj-body').style.display = on ? '' : 'none';
   if (on && !objVao) rebuildObject();
   if (on && project.surface && surfShape !== project.shape) bakeSurface();
+  allocSim(true);
   retuneRanges();
   document.getElementById('sec-draw').style.display =
     (!on && currentModel === 'reaction') ? '' : 'none';
@@ -2386,9 +2653,12 @@ function exportSVG() {
   let maxB = 0;
   for (let i = 0; i < field.length; i++) if (field[i] > maxB) maxB = field[i];
   if (maxB < 0.02) { alert('field is empty — paint or reseed before exporting.'); return; }
-  const ramp = palettes[currentPalette].stops;
+  const ramp = activeStops();
   const bg = style === 'plotter' ? '#ffffff' : ramp[0];
   const ink = style === 'plotter' ? '#111111' : ramp[ramp.length - 1];
+  // what is on screen is what gets exported: with the projection on, the
+  // contours are carried onto the object and drawn through the same camera
+  if (project.on) { exportSVGProjected(field, maxB, nLevels, bg, ink); return; }
   let paths = '', total = 0;
   for (let li = 0; li < nLevels; li++) {
     const level = maxB * (li + 1) / (nLevels + 1);
@@ -2412,7 +2682,234 @@ function exportSVG() {
     '  <rect width="100%" height="100%" fill="' + bg + '"/>\n' + paths + '</svg>\n';
   download(new Blob([svg], { type: 'image/svg+xml' }), fileBase() + '.svg');
 }
-function exportPNG() { render(); canvas.toBlob(b => b && download(b, fileBase() + '.png'), 'image/png'); }
+function exportPNG() {
+  // draw the view that is actually on screen — the object when the projection
+  // is on, the flat field otherwise — then grab it
+  if (project.on) render3D(); else render();
+  canvas.toBlob(b => b && download(b, fileBase() + '.png'), 'image/png');
+}
+
+/* ---- vector trace of the projected object ----
+   the same marching-squares contours, but every point is carried onto the
+   object through the shape's own parametric function — displacement included —
+   and projected with the camera that drew the frame. points whose surface
+   faces away are dropped and the polyline is cut there, so what lands in the
+   file is the side you can see. the object's silhouette is traced from the
+   same parameterisation, so the contours have an edge to sit inside.
+   occlusion is by facing only: on a torus or a knot a far limb can show
+   through a near one, the way a wireframe plate does. ------------------- */
+function exportSVGProjected(field, maxB, nLevels, bg, ink) {
+  const shape = SHAPES[project.shape];
+  const W = canvas.width, H = canvas.height;
+  const proj = projMatrix(), eye = orbitEye(orbit.dist);
+  const view = matLookAt(eye, [0, 0, 0], [0, 1, 0]);
+  const tile = surfaceOn() ? 1 : Math.max(0.5, P.pr_tile);
+  const copies = Math.max(1, Math.ceil(tile));
+  const h = 4e-4;
+  const wrap01 = x => ((x % 1) + 1) % 1;
+  const fieldAt = (u, v) => {
+    const x = Math.min(simW - 1, Math.floor(wrap01(u) * simW));
+    const y = Math.min(simH - 1, Math.floor((1 - wrap01(v)) * simH));
+    return field[y * simW + x];
+  };
+  // a point on the object, its outward normal, and the displacement the
+  // vertex stage would have given it
+  function at(u, v) {
+    const uu = wrap01(u), vv = Math.min(1, Math.max(0, v));
+    const p = shape.f(uu, vv);
+    const pu = v3sub(shape.f(uu + h, vv), shape.f(uu - h, vv));
+    const pv = v3sub(shape.f(uu, Math.min(1, vv + h)), shape.f(uu, Math.max(0, vv - h)));
+    let n = v3cross(pu, pv);
+    const out = v3sub(p, shape.axis(uu, vv));
+    if (v3len(n) < 1e-9) n = out;
+    n = v3norm(n);
+    if (v3dot(n, out) < 0) n = [-n[0], -n[1], -n[2]];
+    const d = P.pr_disp * fieldAt(uu * tile, vv * tile);
+    return { p: [p[0] + n[0] * d, p[1] + n[1] * d, p[2] + n[2] * d], n };
+  }
+  const facing = q => v3dot(q.n, v3sub(eye, q.p)) > 0;
+  const screen = q => projectPoint(q.p, view, proj, W, H);
+  const fmt = pt => pt[0].toFixed(2) + ' ' + pt[1].toFixed(2);
+  // a run of visible points becomes one path; a hidden point ends the run
+  function emit(points) {
+    let d = '', run = null;
+    for (const q of points) {
+      const pt = q && facing(q) ? screen(q) : null;
+      if (!pt) { run = null; continue; }
+      if (!run) { d += 'M' + fmt(pt); run = true; } else d += 'L' + fmt(pt);
+    }
+    return d;
+  }
+
+  let paths = '', total = 0;
+  for (let li = 0; li < nLevels; li++) {
+    const level = maxB * (li + 1) / (nLevels + 1);
+    const polys = marchingSquares(field, simW, simH, level);
+    total += polys.length;
+    const op = (0.35 + 0.65 * (li + 1) / nLevels).toFixed(2);
+    let d = '';
+    for (const line of polys) {
+      // the field repeats across the object when it is tiled, so each contour
+      // is drawn once per copy
+      for (let ku = 0; ku < copies; ku++) for (let kv = 0; kv < copies; kv++) {
+        const pts = [];
+        for (const pt of line) {
+          const ou = (pt[0] / simW + ku) / tile, ov = (1 - pt[1] / simH + kv) / tile;
+          pts.push(ov > 1 ? null : at(ou, ov));
+        }
+        d += emit(pts);
+      }
+    }
+    if (d) paths += '  <path d="' + d + '" stroke="' + ink + '" stroke-opacity="' + op +
+      '" fill="none" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/>\n';
+  }
+  if (!total) { alert('no contours found at the current levels.'); return; }
+
+  // silhouette: the parametric grid, walked for the seam between a patch that
+  // faces the camera and one that does not
+  const nu = 200, nv = Math.max(24, Math.round(200 * shape.vRatio));
+  const face = [], grid = [];
+  for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) grid.push(at(i / nu, j / nv));
+  const gx = (i, j) => grid[j * (nu + 1) + i];
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++)
+    face.push(facing(at((i + 0.5) / nu, (j + 0.5) / nv)));
+  const fx = (i, j) => face[j * nu + i];
+  const closed = shape.vEdge === 'wrap';
+  let edge = '';
+  const seam = (a, b) => { const pa = screen(a), pb = screen(b); if (pa && pb) edge += 'M' + fmt(pa) + 'L' + fmt(pb); };
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+    if (!fx(i, j)) continue;
+    // u always closes on itself; v only on a tube. an open rim counts as
+    // nothing beyond it, so the rim itself gets drawn.
+    const left  = fx((i - 1 + nu) % nu, j);
+    const right = fx((i + 1) % nu, j);
+    const below = j > 0 ? fx(i, j - 1) : (closed ? fx(i, nv - 1) : false);
+    const above = j < nv - 1 ? fx(i, j + 1) : (closed ? fx(i, 0) : false);
+    if (!left)  seam(gx(i, j), gx(i, j + 1));
+    if (!right) seam(gx(i + 1, j), gx(i + 1, j + 1));
+    if (!below) seam(gx(i, j), gx(i + 1, j));
+    if (!above) seam(gx(i, j + 1), gx(i + 1, j + 1));
+  }
+  if (edge) paths = '  <path d="' + edge + '" stroke="' + ink +
+    '" stroke-opacity="0.9" fill="none" stroke-width="1.4" stroke-linecap="round"/>\n' + paths;
+
+  const svg =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">\n' +
+    '  <!-- ' + MODELS[currentModel].label + ' on ' + shape.label +
+    (surfaceOn() ? ' (grown on surface)' : ' (projected, tiling ' + tile.toFixed(1) + '×)') + ' -->\n' +
+    '  <rect width="100%" height="100%" fill="' + bg + '"/>\n' + paths + '</svg>\n';
+  download(new Blob([svg], { type: 'image/svg+xml' }), fileBase() + '.svg');
+}
+
+/* ================================================================
+   preset files
+   ------------------------------------------------------------------
+   everything on the panel in one json object: the model and its own
+   parameters, the whole colour section, liquid and pulse, the projection and
+   the camera looking at it. loading applies them in the order the ui itself
+   depends on — model first, because it decides which parameters exist, then
+   the projection, then the numbers, and the band lock last so a saved kill
+   rate is restored exactly rather than being pulled back onto the curve.
+   ================================================================ */
+const CONFIG_KIND = 'reaction-diffusion-preset';
+
+function collectConfig() {
+  return {
+    kind: CONFIG_KIND,
+    version: 1,
+    saved: new Date().toISOString(),
+    model: currentModel,
+    seed: genSeed,
+    params: Object.assign({}, P),
+    palette: currentPalette,
+    customStops: customStops.slice(),
+    rampMode,
+    coupled,
+    smooth: smoothDisplay,
+    resolution: document.getElementById('simscale').value,
+    projection: { on: project.on, surface: project.surface, shape: project.shape, mode: project.mode },
+    view: { yaw: orbit.yaw, pitch: orbit.pitch, dist: orbit.dist },
+  };
+}
+
+function exportConfig() {
+  const json = JSON.stringify(collectConfig(), null, 2);
+  download(new Blob([json], { type: 'application/json' }), fileBase() + '.json');
+}
+
+function applyConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error('not a preset object');
+  if (cfg.kind && cfg.kind !== CONFIG_KIND) throw new Error('that json is not a preset for this app');
+
+  if (typeof cfg.resolution === 'string' &&
+      [...document.getElementById('simscale').options].some(o => o.value === cfg.resolution)) {
+    document.getElementById('simscale').value = cfg.resolution;
+    allocSim(true);
+  }
+  if (typeof cfg.model === 'string' && MODELS[cfg.model]) selectModel(cfg.model);
+  if (typeof cfg.seed === 'number' && isFinite(cfg.seed)) genSeed = cfg.seed;
+
+  const pj = cfg.projection;
+  if (pj && typeof pj === 'object') {
+    if (SHAPES[pj.shape]) { project.shape = pj.shape; document.getElementById('projshape').value = pj.shape; }
+    if (['shaded', 'wire', 'both'].includes(pj.mode)) {
+      project.mode = pj.mode; document.getElementById('projmode').value = pj.mode;
+    }
+    rebuildObject();
+    setSurface(pj.surface !== false);
+    setProject(!!pj.on);
+  }
+
+  // free the ranges first, so a saved pair that sits just outside the measured
+  // band lands where it was saved rather than on the edge of the band
+  setCoupled(false);
+  if (cfg.params && typeof cfg.params === 'object') {
+    for (const id in cfg.params) {
+      const v = cfg.params[id];
+      if (paramById[id] && typeof v === 'number' && isFinite(v)) setParam(id, v);
+    }
+  }
+  setCoupled(cfg.coupled !== false);
+
+  if (Array.isArray(cfg.customStops) && cfg.customStops.length === 4 &&
+      cfg.customStops.every(c => /^#[0-9a-fA-F]{6}$/.test(c))) {
+    customStops = cfg.customStops.slice();
+  }
+  if (typeof cfg.rampMode === 'string' && RAMP_MODES[cfg.rampMode]) {
+    rampMode = cfg.rampMode;
+    document.getElementById('rampmode').value = rampMode;
+  }
+  if (typeof cfg.palette === 'number') {
+    currentPalette = Math.max(-1, Math.min(palettes.length - 1, Math.round(cfg.palette)));
+    document.getElementById('palette').value = String(currentPalette);
+    document.getElementById('swatches').style.display = currentPalette < 0 ? '' : 'none';
+  }
+  syncSwatches();
+  refreshRamp();
+
+  if (typeof cfg.smooth === 'boolean' && cfg.smooth !== smoothDisplay)
+    document.getElementById('btn-smooth').click();
+
+  const vw = cfg.view;
+  if (vw && typeof vw === 'object') {
+    if (isFinite(vw.yaw)) orbit.yaw = vw.yaw;
+    if (isFinite(vw.pitch)) orbit.pitch = Math.max(-1.45, Math.min(1.45, vw.pitch));
+    if (isFinite(vw.dist)) setParam('pr_dist', vw.dist);
+  }
+  markPresetCustom();
+  updateModelTag();
+}
+
+function importConfig(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { applyConfig(JSON.parse(String(reader.result))); }
+    catch (err) { alert('could not load that preset: ' + err.message); }
+  };
+  reader.onerror = () => alert('could not read that file.');
+  reader.readAsText(file);
+}
 
 /* ================================================================
    video export
@@ -2490,6 +2987,9 @@ function setFieldFx(prog) {
   gl.uniform1f(prog.u.u_pulserate, P.pulserate);
   gl.uniform1f(prog.u.u_pulsewave, P.pulsewave);
   gl.uniform1f(prog.u.u_dsmooth, P.pr_soft);
+  // brightness pulls the ramp down; the lights the shader adds on top have to
+  // come down with it or the picture stays vivid however dark the colours get
+  gl.uniform1f(prog.u.u_gain, Math.max(0, 1 + Math.min(0, P.col_lift)));
   gl.uniform1f(prog.u.u_smooth, smoothDisplay ? 1 : 0);
   gl.uniform2f(prog.u.u_texel, 1 / simW, 1 / simH);
 }
@@ -2577,6 +3077,12 @@ function regenerate() { if (currentModel === 'reaction') seed(true); else genSee
 document.getElementById('btn-svg').addEventListener('click', exportSVG);
 document.getElementById('btn-png').addEventListener('click', exportPNG);
 document.getElementById('btn-rec').addEventListener('click', toggleRecord);
+document.getElementById('btn-cfgsave').addEventListener('click', exportConfig);
+document.getElementById('btn-cfgload').addEventListener('click', () => document.getElementById('cfgfile').click());
+document.getElementById('cfgfile').addEventListener('change', e => {
+  if (e.target.files[0]) importConfig(e.target.files[0]);
+  e.target.value = '';
+});
 document.getElementById('btn-smooth').addEventListener('click', () => {
   smoothDisplay = !smoothDisplay;
   document.getElementById('btn-smooth').textContent = 'smooth: ' + (smoothDisplay ? 'on' : 'off');
@@ -2585,7 +3091,11 @@ document.getElementById('simscale').addEventListener('change', () => allocSim(tr
 document.getElementById('btn-couple').addEventListener('click', () => setCoupled(!coupled));
 document.getElementById('btn-project').addEventListener('click', () => setProject(!project.on));
 document.getElementById('btn-surface').addEventListener('click', () => setSurface(!project.surface));
-document.getElementById('projshape').addEventListener('change', e => { project.shape = e.target.value; rebuildObject(); });
+document.getElementById('projshape').addEventListener('change', e => {
+  project.shape = e.target.value;
+  rebuildObject();          // rebakes the surface map, and with it the grid shape
+  allocSim(true);
+});
 document.getElementById('projmode').addEventListener('change', e => { project.mode = e.target.value; });
 document.getElementById('paneltoggle').addEventListener('click', togglePanel);
 
