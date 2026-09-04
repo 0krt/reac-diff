@@ -39,15 +39,41 @@ reaction-diffusion pattern grows across the surface in real time.
   object-space position of every point on the skin. The generative models read
   that position and evaluate a three-dimensional pattern there — a Voronoi cell
   is a volume the surface cuts through, a marble vein runs through the solid —
-  so there is no seam and no pinch at the poles. Reaction–diffusion instead
-  reads the local stretch of the parameterisation out of the map and weights
-  its Laplacian by the inverse square, which turns the flat operator into the
-  surface one: a spot comes out the same size wherever it grows, instead of
-  being squeezed thin near a pole. Turn it off for the old behaviour — the flat
-  field projected on, with tiling.
-- **Surface styles** — shaded, wireframe, or both. The wireframe is a
+  so there is no seam and no pinch at the poles. Reaction–diffusion solves with
+  the surface metric instead, in three parts:
+  - **The grid is shaped to the object.** The resolution setting fixes a texel
+    budget; the grid's *aspect* comes from the object's own parameterisation. A
+    torus knot is nine times longer along its length than round its tube, so it
+    gets a 751×85 field rather than a 320×200 one — a texel covers the same
+    patch of surface either way, and the pattern stops coming out drawn along
+    the knot.
+  - **The Laplacian carries the metric.** Each tap is weighted by the inverse
+    square of the world distance a texel spans there, so the stencil equals a
+    fixed multiple of the true surface Laplacian everywhere and a spot is the
+    same size wherever it grows.
+  - **Where a ring shrinks, the grid coarsens with it.** At the top of a sphere
+    a whole run of texels covers one speck of object, and a weight big enough
+    to correct for that would break the explicit scheme. So the row is solved
+    on a coarser ring of cells instead — the reduced grid weather models use at
+    the poles — and the texels between cell centres are filled in smoothly.
+    Each ring staggers its cells by its own offset: lined up row on row they
+    make a lattice as symmetric as the sphere, and Gray–Scott answers that with
+    a bullseye on the pole. The field also continues past the v edge the way
+    the object does — across a pole it carries on down the opposite meridian,
+    an open rim has nothing beyond it, a closed tube wraps — so the two poles
+    of a sphere no longer diffuse into each other.
+
+  Turn it off for the old behaviour — the flat field projected on, with tiling.
+- **Surface styles** — shaded (default), wireframe, or both. The wireframe is a
   see-through grid in the style of the classic wireframe-primitive plates; its
   line spacing is independent of how finely the surface is tessellated.
+- **The torus knot's tube** is swept on a transported frame, not a Frenet one.
+  A Frenet frame turns over at every inflection and is undefined where the
+  curvature vanishes; sweeping a tube along one wrings the surface round on
+  itself, which shears the uv and rakes the pattern. The frame here is carried
+  along the curve by double reflection and the mismatch left after one lap is
+  spread back over the loop, so it closes up periodic with the least twist a
+  closed tube can have.
 - **Displacement** — the field pushes vertices along the surface normal, so
   chemical B becomes actual relief on the object. It rides a softened,
   bilinearly sampled read of the field (**disp. softness**), so the surface
@@ -61,17 +87,30 @@ reaction-diffusion pattern grows across the surface in real time.
   mode only; on a surface the field *is* the parameterisation).
 
 PNG and video export capture whatever is on the canvas, so they record the
-projected object; SVG export always traces the flat field.
+projected object. SVG export follows: with the projection on it carries the
+marching-squares contours onto the object through the shape's own parametric
+function — displacement included — projects them with the camera that drew the
+frame, drops the points whose surface faces away, and traces the silhouette
+from the same parameterisation so the contours have an edge to sit inside.
+Occlusion is by facing only, so on a torus or a knot a far limb shows through a
+near one, the way a wireframe plate does. With the projection off it traces the
+flat field as before.
 
 ## Colour
 
-The six palettes are starting points, not the whole choice:
+The fifteen palettes are starting points, not the whole choice:
 
 - **Custom palette** — four colour pickers (background, shadow, mid,
   highlight). Stepping into `custom` seeds them from whichever preset you were
   looking at.
+- **Ramp shape** — smooth, mirrored, repeated, or banded into seven steps. The
+  same colours read four ways, so every palette is really four.
 - **Hue shift / saturation / brightness** — applied to the ramp itself, so they
-  work on a preset and on a custom palette alike.
+  work on a preset and on a custom palette alike. Brightness lifts upward and
+  *multiplies* downward, all the way to black at −1, and the lights the shader
+  adds on top of the ramp come down with it — so the whole picture goes dark,
+  background included, rather than the mid-tones being pushed about while a
+  bright palette stays bright.
 - **Hue spread** — fans the hue out along the ramp, from a single-hue ramp at 0
   to a duotone at the extremes.
 - **Ramp curve** — where the colours land across the level window.
@@ -79,15 +118,24 @@ The six palettes are starting points, not the whole choice:
 
 ## Liquid and pulse
 
-Two shading controls that read on the flat field and on a projected object:
+Two shading controls that read on the flat field and on a projected object.
+Both work on the pattern rather than on the surface it sits on:
 
-- **Liquid** — floats the read on a slow rotational flow, then wets the
-  surface: a tight second highlight, a grazing sheen, and a depth tint where
-  the field is thick. **Flow** sets how fast it moves.
-- **Pulse** — a travelling swell in thickness, radial across the flat field and
-  through space on an object, so waves run over the surface however the camera
-  is turned. It drives the displacement too, so a projected object physically
-  breathes. **Pulse rate** and **pulse waves** set its speed and wavelength.
+- **Liquid** — the pattern turns to poured metal. The field read drifts on a
+  slow rotational flow, so the shapes themselves crawl and stretch; the
+  pattern's own gradient then bends a bead normal steep enough that the rim of
+  a blob turns right through to grazing, and that bead mirrors a small
+  environment tinted by the top of the palette — so liquid metal in `ember` is
+  hot brass and in `ice` is chrome. All of it is masked to where the pattern
+  is, so the ground around it stays the matte surface it was. **Flow** sets how
+  fast it moves.
+- **Pulse** — a swell in thickness whose phase is the field itself, so the wave
+  runs *along* the pattern: outward through each blob, down the length of a
+  vein, instead of sweeping over the frame regardless of what is drawn on it. A
+  little of the geometric distance stays in the phase so the waves also drift,
+  and the swell drives the displacement too, so a projected object breathes
+  where the pattern is thick. **Pulse rate** and **pulse waves** set its speed
+  and wavelength.
 
 ## Features
 
@@ -130,8 +178,14 @@ Two shading controls that read on the flat field and on a projected object:
   plotter/white). Plotter-friendly.
 - **Video export** — records the live canvas to WebM via MediaRecorder
   (VP9/VP8, 60 fps target).
-- **PNG export**, ten f/k pattern presets (mitosis, coral, worms, maze, …),
-  six color palettes, pause/reseed/clear.
+- **Preset files** — `save json` writes the whole panel to a file: the model
+  and its own parameters, the colour section, liquid and pulse, the projection,
+  the camera and the resolution. `load json` puts them all back, applying them
+  in the order the UI depends on and restoring a saved kill rate exactly rather
+  than pulling it back onto the curve.
+- **Double-click any slider** to put it back where it started.
+- **PNG export**, ten f/k pattern presets (coral growth is where it opens;
+  mitosis, worms, maze, …), fifteen colour palettes, pause/reseed/clear.
 
 ## Keys
 
