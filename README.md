@@ -28,9 +28,9 @@ though MIDI and some export features prefer `https://` or `localhost`, so
 
 ## 3D projection
 
-Any model's field can be mapped, live, onto an orbiting object: **sphere,
-torus, hyperboloid, cylinder, cone, torus knot**. Drag the canvas to turn it,
-wheel to zoom, `o` to toggle. The simulation keeps running underneath, so a
+Any model's field can be mapped, live, onto an orbiting object: **sphere, cube,
+icosahedron, torus, hyperboloid, cylinder, cone, torus knot**. Drag the canvas
+to turn it, wheel to zoom, `o` to toggle. The simulation keeps running underneath, so a
 reaction-diffusion pattern grows across the surface in real time.
 
 - **Grow on surface** (default) — the pattern is evaluated at points *on the
@@ -67,6 +67,16 @@ reaction-diffusion pattern grows across the surface in real time.
 - **Surface styles** — shaded (default), wireframe, or both. The wireframe is a
   see-through grid in the style of the classic wireframe-primitive plates; its
   line spacing is independent of how finely the surface is tessellated.
+- **The flat-faced objects** — the cube and the icosahedron are the sphere's
+  own parameterisation pushed out to where each direction leaves the solid:
+  for a body cut by planes at one distance from the centre that is `d / max
+  dot(dir, n)` over the face normals, and with the normals in ± pairs the max
+  is just the largest `|dot|`. Keeping the sphere's `(u, v)` is the point —
+  the surface map, the pole folding, the metric the solver weights its
+  Laplacian by and the wireframe all carry over untouched, and only where the
+  surface sits changes. The creases fall where they fall across the uv grid,
+  so these two want more mesh than a smooth object before their edges read
+  straight.
 - **The torus knot's tube** is swept on a transported frame, not a Frenet one.
   A Frenet frame turns over at every inflection and is undefined where the
   curvature vanishes; sweeping a tube along one wrings the surface round on
@@ -79,7 +89,12 @@ reaction-diffusion pattern grows across the surface in real time.
   bilinearly sampled read of the field (**disp. softness**), so the surface
   swells across a whole feature instead of stepping between texels, and the
   shading normal is rebuilt from that same softened field — geometry and light
-  agree rather than fighting.
+  agree rather than fighting. Displacement is a vertex move, so a feature that
+  falls between two vertices cannot lift the surface at all — it can only pull
+  the two of them apart, which is why it used to come apart as soon as the
+  tiling came up. **Mesh density** now sets the tessellation for *one repeat*
+  of the field and the tiling multiplies it, under a vertex budget, so the
+  mesh stays finer than the pattern at any tiling.
 - **Embossing** — the sharp field gradient additionally perturbs the surface
   normal through a cotangent frame, carving detail into a surface that never
   actually moved.
@@ -158,6 +173,35 @@ Both work on the pattern rather than on the surface it sits on:
   past it the field saturates in one jump), and B is held to half of A's
   diffusion rate, without which no Turing instability exists. Unlock for the
   full plane.
+- **Cell size** — how large a spot comes out, independent of the resolution and
+  of the tiling on a projection. Spot size is not normally a free parameter of
+  Gray–Scott: it falls out of the diffusion lengths measured in grid cells, so
+  the only ways to change it were to change the grid or to wrap more copies of
+  the field around the object. This slider scales the reference cell the solver
+  already keeps — the length one cell of the reaction is allowed to occupy.
+  The stencil can only step over whole texels, so the whole number nearest the
+  cell size is what it steps — the reaction runs on a coarser lattice than the
+  texture it is stored in, and the field is read back between the cell centres.
+  What is left over after that rounding is taken two ways: short of a whole
+  cell every tap is damped, which is exactly a shorter diffusion length and
+  costs nothing; past a whole cell there is nowhere for the stencil to widen
+  to, so the diffusion itself is raised and the timestep comes down by the same
+  factor to pay for it. `dt · D` is what the explicit scheme is stable in and
+  it does not move, so the stability cap stays where it was and only the
+  reaction integrates in smaller steps — a cell size a little above a whole
+  number runs up to about twice as slow, which **steps / frame** buys back.
+  Without that half the slider would be dead, since rounding alone can only
+  give whole multiples. Under about 0.7 the pattern starts to feel the grid and
+  the spots square up. A texel between cell centres carries the
+  reconstruction rather than running the reaction on its own — the kinetics are
+  nonlinear, so the update of an interpolated value is not the interpolation of
+  the updates, and the drift shows as grain — and every derivative the shading
+  takes is measured across a whole cell, where the reconstruction's slope
+  ripple cancels.
+- **Round seeds** — a reseed drops soft-edged discs of varying size at a pitch
+  that follows the cell size, not filled lattice squares. A square hands the
+  reaction four corners and two axes to grow along, and the first frames of the
+  pattern remember them.
 - **Diffusion bias** — an X/Y anisotropy that weights the Laplacian stencil so
   growth drifts in a chosen direction (as in the original playground).
 - **Lit rendering** — the B field is treated as a height map and shaded with

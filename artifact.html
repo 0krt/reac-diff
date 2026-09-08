@@ -325,6 +325,8 @@
       <div class="sublabel">object</div>
       <select aria-label="Projection object" id="projshape">
         <option value="sphere" selected>sphere</option>
+        <option value="cube">cube</option>
+        <option value="icosahedron">icosahedron</option>
         <option value="torus">torus</option>
         <option value="hyperboloid">hyperboloid</option>
         <option value="cylinder">cylinder</option>
@@ -522,6 +524,7 @@ ${SURFACE}
 uniform sampler2D u_state;
 uniform vec2  u_texel;
 uniform float u_dA, u_dB, u_feed, u_kill, u_dt, u_biasX, u_biasY;
+uniform float u_cellsize;   // how large one cell of the reaction is asked to be
 uniform float u_vmode;   // 0 the field wraps in v · 1 poles at both ends · 2 open rims
 in vec2 v_uv;
 out vec4 outColor;
@@ -549,12 +552,16 @@ vec2 foldV(vec2 uv) {
 // untouched; it is only what fills the space between them that changes.
 vec2 ringRead(vec2 uv, float cell) {
   if (cell <= 1.0001) return texture(u_state, uv).rg;
-  // each ring starts its cells at its own offset. lined up row on row the
-  // cells make a lattice as symmetric as the sphere is, and gray-scott answers
-  // that with a bullseye centred on the pole; staggered, the pattern grows
-  // through the cap the way it grows anywhere else.
-  float row = floor(uv.y / u_texel.y);
-  float o = floor(fract(sin(row * 12.9898) * 43758.5453) * cell);
+  // on the object each ring starts its cells at its own offset. lined up row on
+  // row the cells make a lattice as symmetric as the sphere is, and gray-scott
+  // answers that with a bullseye centred on the pole; staggered, the pattern
+  // grows through the cap the way it grows anywhere else. flat there is no pole
+  // to break, and a per-row offset would only rake the pattern, so it is zero.
+  float o = 0.0;
+  if (u_surface > 0.5) {
+    float row = floor(uv.y / u_texel.y);
+    o = floor(fract(sin(row * 12.9898) * 43758.5453) * cell);
+  }
   float x = (uv.x / u_texel.x - 0.5 - o) / cell;
   float i = floor(x), f = x - i;
   f = f * f * (3.0 - 2.0 * f);
@@ -562,18 +569,75 @@ vec2 ringRead(vec2 uv, float cell) {
   vec2 b = texture(u_state, vec2(((i + 1.0) * cell + o + 0.5) * u_texel.x, uv.y)).rg;
   return mix(a, b, f);
 }
-vec2 readState(vec2 uv, float cell) { return ringRead(foldV(uv), cell); }
+/* the same reconstruction down v. a cell wider than a texel in v leaves the
+   even and odd rows of the grid solving the reaction independently of each
+   other — two patterns interleaved, which reads as noise — so only the cell
+   centre rows take part and what lies between them is the smoothstep of the
+   two that do. each tap folds through the v edge on its own, so the blend
+   never reaches across a pole or past an open rim. a cell centre still reads
+   exactly itself either way: the dynamics are untouched, and it is only what
+   fills the space between cells that this decides. */
+vec2 readState(vec2 uv, vec2 cell) {
+  if (cell.y <= 1.0001) return ringRead(foldV(uv), cell.x);
+  float y = (uv.y / u_texel.y - 0.5) / cell.y;
+  float i = floor(y), f = y - i;
+  f = f * f * (3.0 - 2.0 * f);
+  vec2 a = ringRead(foldV(vec2(uv.x, (i * cell.y + 0.5) * u_texel.y)), cell.x);
+  vec2 b = ringRead(foldV(vec2(uv.x, ((i + 1.0) * cell.y + 0.5) * u_texel.y)), cell.x);
+  return mix(a, b, f);
+}
+// whether this texel is one of the cell centres — the ones that actually solve
+bool onCentre(vec2 uv, vec2 cell) {
+  float o = 0.0;
+  if (u_surface > 0.5 && cell.x > 1.0001) {
+    float row = floor(uv.y / u_texel.y);
+    o = floor(fract(sin(row * 12.9898) * 43758.5453) * cell.x);
+  }
+  float ix = floor(uv.x / u_texel.x), iy = floor(uv.y / u_texel.y);
+  return fract((ix - o) / cell.x) < 1e-4 && fract(iy / cell.y) < 1e-4;
+}
 
+/* ---- how big a cell is ----
+   the size of a spot is not a free parameter of gray-scott: it comes out of
+   the diffusion lengths measured in grid cells, so the only way to change it
+   has been to change the grid — the resolution setting — or, on an object, to
+   wrap more copies of the field around it. u_cellsize is the third way. it
+   scales the reference cell the solver already keeps: the length one cell of
+   the reaction is allowed to occupy.
+
+   the stencil can only step over whole texels, so the whole number nearest the
+   cell size is what it steps: the reaction then runs on a coarser lattice than
+   the texture it is stored in, and the field is read back between the cell
+   centres. what is left over after that rounding is the fractional part, and
+   it is taken two different ways depending on which side of 1 it falls.
+
+   short of a whole cell, every tap is simply damped — scaling the laplacian is
+   exactly a shorter diffusion length, and it costs nothing. past a whole cell
+   there is nowhere left for the stencil to widen to, so the diffusion itself
+   is raised instead and the timestep comes down by the same factor to pay for
+   it: dt * D is what the explicit scheme is stable in and it does not move, so
+   the scheme keeps every bit of the headroom it had and the timestep cap stays
+   where it was. the reaction integrates in smaller steps, which is the price —
+   a cell size a little above a whole number runs up to about twice as slow, and
+   steps / frame buys it back. without this half of the slider would be dead:
+   rounding alone can only give whole multiples. ------------------------ */
 void main() {
-  // per-axis diffusion weights and cell widths. flat, they are 1 and 1 and the
-  // stencil below is the usual 9-point laplacian.
+  // whole texels the stencil steps, and what is left over after that
+  float ncell = max(1.0, floor(u_cellsize + 0.5));
+  float resid = u_cellsize / ncell;
+  float damp = min(1.0, resid); damp *= damp;      // short of a cell: weaker taps
+  float boost = max(1.0, resid); boost *= boost;   // past one: more diffusion, less dt
+  // per-axis diffusion weights and cell widths. at cell size 1 and off the
+  // object they are 1 and 1 and the stencil below is the usual 9-point
+  // laplacian.
   vec2 w = vec2(1.0), cell = vec2(1.0);
   if (u_surface > 0.5) {
     // one reference texel — the world size a texel has on average over the
-    // object. weighting each tap so the stencil equals gref^2 times the true
-    // surface laplacian, everywhere, is what gives a spot the same size
-    // wherever it grows, however uneven the uv happens to be.
-    float gref = u_surfref * sqrt(u_texel.x * u_texel.y);
+    // object, times whatever the cell size asks for. weighting each tap so the
+    // stencil equals gref^2 times the true surface laplacian, everywhere, is
+    // what gives a spot the same size wherever it grows, however uneven the uv
+    // happens to be.
+    float gref = u_surfref * sqrt(u_texel.x * u_texel.y) * ncell;
     vec2 g = surfStretch(v_uv) * u_texel;              // world per texel, here
     // the cell width has to be one figure for the whole ring or neighbouring
     // texels would disagree about where a cell begins, so it comes off the
@@ -599,31 +663,48 @@ void main() {
     // reconstruction below comes out periodic and clean.
     cell = max(vec2(1.0), floor(cell + 0.5));
     w = min(vec2(1.0), gref / max(g * cell, vec2(1e-6)));
-    w *= w;
+    w *= w * damp;
+  } else {
+    // flat there is no metric to carry: a texel is the unit, and the cell is
+    // the rounded cell size outright.
+    cell = vec2(min(ncell, 8.0));
+    w = vec2(damp);
   }
   vec2 e = u_texel * cell;
-  vec2 c = readState(v_uv, cell.x);
+  // a texel between the cell centres carries the reconstruction and nothing
+  // else. left to run the reaction on its own it would drift off the smooth
+  // curve its neighbours describe — the kinetics are nonlinear, so the update
+  // of an interpolated value is not the interpolation of the updates — and the
+  // drift is what the display picks up as grain over a coarse field. writing
+  // the reconstruction instead leaves those texels exactly one step behind the
+  // centres, which nothing can see, and exactly as smooth as the field the
+  // solver is actually reading.
+  if (!onCentre(v_uv, cell)) { outColor = vec4(readState(v_uv, cell), 0.0, 1.0); return; }
+  vec2 c = readState(v_uv, cell);
 
   float wd = 0.5 * (w.x + w.y);                        // diagonal taps
   float centre = 0.4 * w.x + 0.4 * w.y + 0.2 * wd;     // keeps a flat field flat
 
   // laplacian with directional (anisotropic) bias on the axial taps
   vec2 lap = -centre * c;
-  lap += 0.20 * w.x * (1.0 + u_biasX) * readState(v_uv + vec2( e.x, 0.0), cell.x);
-  lap += 0.20 * w.x * (1.0 - u_biasX) * readState(v_uv + vec2(-e.x, 0.0), cell.x);
-  lap += 0.20 * w.y * (1.0 + u_biasY) * readState(v_uv + vec2(0.0,  e.y), cell.x);
-  lap += 0.20 * w.y * (1.0 - u_biasY) * readState(v_uv + vec2(0.0, -e.y), cell.x);
-  lap += 0.05 * wd * readState(v_uv + vec2( e.x,  e.y), cell.x);
-  lap += 0.05 * wd * readState(v_uv + vec2(-e.x,  e.y), cell.x);
-  lap += 0.05 * wd * readState(v_uv + vec2( e.x, -e.y), cell.x);
-  lap += 0.05 * wd * readState(v_uv + vec2(-e.x, -e.y), cell.x);
+  lap += 0.20 * w.x * (1.0 + u_biasX) * readState(v_uv + vec2( e.x, 0.0), cell);
+  lap += 0.20 * w.x * (1.0 - u_biasX) * readState(v_uv + vec2(-e.x, 0.0), cell);
+  lap += 0.20 * w.y * (1.0 + u_biasY) * readState(v_uv + vec2(0.0,  e.y), cell);
+  lap += 0.20 * w.y * (1.0 - u_biasY) * readState(v_uv + vec2(0.0, -e.y), cell);
+  lap += 0.05 * wd * readState(v_uv + vec2( e.x,  e.y), cell);
+  lap += 0.05 * wd * readState(v_uv + vec2(-e.x,  e.y), cell);
+  lap += 0.05 * wd * readState(v_uv + vec2( e.x, -e.y), cell);
+  lap += 0.05 * wd * readState(v_uv + vec2(-e.x, -e.y), cell);
 
   float A = c.r, B = c.g;
   float reaction = A * B * B;
+  // boost raises the diffusion and takes the same factor back out of the
+  // timestep, so the diffusive part of the update — and its stability — is
+  // exactly what it was, and only the reaction integrates more slowly
   vec2 next = c + vec2(
-    u_dA * lap.r - reaction + u_feed * (1.0 - A),
-    u_dB * lap.g + reaction - (u_kill + u_feed) * B
-  ) * u_dt;
+    u_dA * boost * lap.r - reaction + u_feed * (1.0 - A),
+    u_dB * boost * lap.g + reaction - (u_kill + u_feed) * B
+  ) * (u_dt / boost);
   outColor = vec4(clamp(next, 0.0, 1.0), 0.0, 1.0);
 }`;
 
@@ -634,11 +715,30 @@ uniform float u_cell;
 in vec2 v_uv;
 out vec4 outColor;
 float hash(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
+/* seeds are discs, not the cells they are drawn in. a square hands the
+   reaction four corners and two axes to grow along and the first frames of the
+   pattern remember them — filaments leave a seed square-on and the field
+   carries that grid for a while. a soft-edged disc has no direction in it. the
+   3x3 sweep is so a disc can sit off the centre of its cell and still be drawn
+   whole by the neighbouring cells' fragments; without it the jitter would just
+   clip the disc back into a square. */
 void main() {
   float B = 0.0;
   if (u_seed >= 0.0) {
-    vec2 cell = floor(gl_FragCoord.xy / u_cell);
-    if (hash(cell + u_seed) > 0.965) B = 1.0;
+    vec2 p = gl_FragCoord.xy / u_cell;
+    vec2 base = floor(p);
+    float soft = 1.3 / u_cell;                    // about a texel of edge, in cells
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        vec2 c = base + vec2(float(i), float(j));
+        float h = hash(c + u_seed);
+        if (h <= 0.965) continue;
+        vec2 o = vec2(hash(c + u_seed + 17.3), hash(c - u_seed + 5.1)) - 0.5;
+        float r = 0.20 + 0.13 * fract(h * 91.7);  // a little spread in size too
+        float d = length(p - c - 0.5 - o * 0.44);
+        B = max(B, 1.0 - smoothstep(r - soft, r + soft, d));
+      }
+    }
   }
   outColor = vec4(1.0, B, 0.0, 1.0);
 }`;
@@ -722,6 +822,16 @@ uniform vec2  u_texel;
 uniform float u_smooth;
 uniform float u_time, u_liquid, u_lqflow, u_pulse, u_pulserate, u_pulsewave, u_dsmooth;
 uniform float u_gain;   // every light the shader adds on top of the ramp
+/* the pitch, in texels, of the lattice the field was actually solved on. at
+   cell size 1 it is 1 and a texel is a cell. above that the solver runs on
+   every nth texel and the texture carries the reconstruction between them,
+   which is smooth in value but not in slope: its gradient dips to nothing at
+   each cell and swells between, and a one-texel central difference reads that
+   ripple rather than the pattern. every derivative the shading takes — the
+   emboss, the displacement normal, the bead — is therefore measured across a
+   whole cell, where the ripple cancels and what is left is the real slope. */
+uniform float u_grain;
+vec2 fieldStep() { return u_texel * max(u_grain, 1.0); }
 
 float rawB(vec2 uv) { return texture(u_state, uv).g; }
 float sampleB(vec2 uv) {
@@ -739,7 +849,7 @@ float sampleB(vec2 uv) {
 // swell across the whole feature instead of at its border.
 float fieldSoft(vec2 uv) {
   if (u_dsmooth <= 0.01) return sampleB(uv);
-  vec2 e = u_texel * u_dsmooth;
+  vec2 e = fieldStep() * u_dsmooth;
   float s = sampleB(uv) * 4.0;
   s += sampleB(uv + vec2(e.x, 0.0)) + sampleB(uv - vec2(e.x, 0.0))
      + sampleB(uv + vec2(0.0, e.y)) + sampleB(uv - vec2(0.0, e.y));
@@ -818,8 +928,9 @@ void main() {
   float t = smoothstep(u_lo, u_hi, B);
   vec3 col = texture(u_ramp, vec2(t, 0.5)).rgb;
   // normal from the B height field → diffuse + specular relief
-  float bx = (sampleB(uv + vec2(u_texel.x, 0.0)) - sampleB(uv - vec2(u_texel.x, 0.0))) * swell;
-  float by = (sampleB(uv + vec2(0.0, u_texel.y)) - sampleB(uv - vec2(0.0, u_texel.y))) * swell;
+  vec2 gs = fieldStep();
+  float bx = (sampleB(uv + vec2(gs.x, 0.0)) - sampleB(uv - vec2(gs.x, 0.0))) * swell;
+  float by = (sampleB(uv + vec2(0.0, gs.y)) - sampleB(uv - vec2(0.0, gs.y))) * swell;
   vec3 n = normalize(vec3(-bx * u_relief * 60.0, -by * u_relief * 60.0, 1.0));
   vec3 L = normalize(vec3(u_light, 0.85));
   vec3 V = vec3(0.0, 0.0, 1.0);
@@ -830,8 +941,8 @@ void main() {
   if (u_liquid > 0.0) {
     // the bead: the pattern's own softened gradient, steep enough that the rim
     // of a blob turns to grazing. the ground it sits on keeps its own normal.
-    float sx = (fieldSoft(uv + vec2(u_texel.x, 0.0)) - fieldSoft(uv - vec2(u_texel.x, 0.0))) * swell;
-    float sy = (fieldSoft(uv + vec2(0.0, u_texel.y)) - fieldSoft(uv - vec2(0.0, u_texel.y))) * swell;
+    float sx = (fieldSoft(uv + vec2(gs.x, 0.0)) - fieldSoft(uv - vec2(gs.x, 0.0))) * swell;
+    float sy = (fieldSoft(uv + vec2(0.0, gs.y)) - fieldSoft(uv - vec2(0.0, gs.y))) * swell;
     vec3 bead = normalize(vec3(-sx, -sy, 0.0) * beadSlope() + vec3(0.0, 0.0, 1.0));
     col = liquidMetal(col, bead, V, L, t, rampTint(u_ramp));
   }
@@ -1222,7 +1333,9 @@ function seed(random) {
   gl.viewport(0, 0, simW, simH);
   gl.useProgram(seedProg.prog);
   gl.uniform1f(seedProg.u.u_seed, random ? Math.random() * 1000 : -1);
-  gl.uniform1f(seedProg.u.u_cell, Math.max(6, simW / 90));
+  // the seed lattice follows the cell size, so a reseed drops specks the
+  // pattern can actually work with rather than at one fixed pitch
+  gl.uniform1f(seedProg.u.u_cell, Math.max(5, simW / 90 * (P.cellsize || 1)));
   for (const f of fields) { gl.bindFramebuffer(gl.FRAMEBUFFER, f.fbo); gl.drawArrays(gl.TRIANGLES, 0, 3); }
 }
 
@@ -1261,9 +1374,9 @@ const PROJECT_PARAMS = [
   { id: 'pr_spin', label: 'auto orbit',    min: 0.00, max: 1.00, step: 0.01, value: 0.12, dp: 2 },
   { id: 'pr_tile', label: 'pattern tiling',min: 0.5,  max: 6.0,  step: 0.1,  value: 1.0,  dp: 1 },
   { id: 'pr_wscale', label: 'surface scale',min: 0.20, max: 4.0, step: 0.05, value: 1.0, dp: 2 },
-  { id: 'pr_disp', label: 'displacement',  min: 0.00, max: 0.35, step: 0.005, value: 0.05, dp: 3 },
+  { id: 'pr_disp', label: 'displacement',  min: 0.00, max: 0.35, step: 0.002, value: 0.05, dp: 3 },
   { id: 'pr_soft', label: 'disp. softness',min: 0.0,  max: 8.0,  step: 0.1,  value: 2.5,  dp: 1 },
-  { id: 'pr_dens', label: 'mesh density',  min: 16,   max: 256,  step: 4,    value: 144,  dp: 0 },
+  { id: 'pr_dens', label: 'mesh density',  min: 16,   max: 512,  step: 4,    value: 256,  dp: 0 },
   { id: 'pr_wire', label: 'wire lines',    min: 4,    max: 64,   step: 1,    value: 22,   dp: 0 },
 ];
 const MODEL_PARAMS = {
@@ -1272,6 +1385,7 @@ const MODEL_PARAMS = {
     { id: 'kill',   label: 'kill rate',     min: 0.040, max: 0.075, step: 0.0001, value: 0.0620, dp: 4 },
     { id: 'dA',     label: 'diffusion a',   min: 0.60,  max: 1.40,  step: 0.001,  value: 1.00,   dp: 3 },
     { id: 'dB',     label: 'diffusion b',   min: 0.15,  max: 0.80,  step: 0.001,  value: 0.50,   dp: 3 },
+    { id: 'cellsize', label: 'cell size',   min: 0.60,  max: 4.00,  step: 0.02,   value: 1.00,   dp: 2 },
     { id: 'biasX',  label: 'bias x',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2 },
     { id: 'biasY',  label: 'bias y',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2 },
     { id: 'dt',     label: 'timestep',      min: 0.40,  max: 1.30,  step: 0.01,   value: 1.00,   dp: 2 },
@@ -1347,7 +1461,9 @@ function setParam(id, value, updateSlider = true) {
   if (updateSlider === false && RENDER_PARAMS.some(r => r.id === id)) modelRenderTouched[id] = true;
   if (COLOR_PARAMS.some(c => c.id === id)) refreshRamp();
   if (LIQUID_PARAMS.some(c => c.id === id)) updateLiquidTag();
-  if (id === 'pr_dens' || id === 'pr_wire') rebuildObject();
+  if (id === 'pr_dens' || id === 'pr_wire') scheduleRebuild();
+  // tiling shrinks the pattern on the object, so the mesh has to follow it
+  if (id === 'pr_tile' && !project.surface) scheduleRebuild();
   if (id === 'pr_dist') orbit.dist = value;
   if (!retuning) {
     if (id === 'kill') { kOffset = P.kill - kCrit(P.feed); updateBandNote(); }
@@ -1746,7 +1862,12 @@ function updateMetaballs() {
 }
 
 const MODELS = {
-  reaction:  { label: 'reaction–diffusion', generative: false },
+  reaction:  { label: 'reaction–diffusion', generative: false,
+    note: 'cell size sets how much of the field one spot takes up without touching the ' +
+          'resolution: above 1 the reaction solves on a coarser lattice than it is stored ' +
+          'on, below 1 it simply diffuses less far. under about 0.7 the pattern starts to ' +
+          'feel the grid it is on and the spots square up; a little above a whole number ' +
+          'it runs up to twice as slow, which steps / frame buys back.' },
   voronoi:   { label: 'voronoi cells',  generative: true, program: () => voronoiProg,
     note: 'organic cellular partition — gap and smooth control the borders.',
     set(u) { gl.uniform1f(u.u_count, P.vor_count); gl.uniform1f(u.u_gap, P.vor_gap);
@@ -1821,7 +1942,7 @@ function selectModel(name) {
   document.getElementById('sec-draw').style.display = (name === 'reaction' && !project.on) ? '' : 'none';
   document.getElementById('row-reaction').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('row-generative').style.display = name === 'reaction' ? 'none' : '';
-  document.getElementById('model-note').textContent = m.generative ? m.note : '';
+  document.getElementById('model-note').textContent = m.note || '';
   document.getElementById('model').value = name;
   document.getElementById('subtitle').textContent =
     name === 'reaction' ? 'gray–scott reaction–diffusion' : m.label;
@@ -1898,11 +2019,12 @@ void main() {
   // normal of the displaced surface — same softened field the vertex stage
   // moved on, so shading and geometry agree. the second is the relief emboss,
   // which carves the sharp field into a surface that never actually moved.
-  vec2 e = u_texel * max(u_dsmooth, 1.0);
+  vec2 gs = fieldStep();
+  vec2 e = gs * max(u_dsmooth, 1.0);
   float sx = (fieldSoft(uv + vec2(e.x, 0.0)) - fieldSoft(uv - vec2(e.x, 0.0))) * swell;
   float sy = (fieldSoft(uv + vec2(0.0, e.y)) - fieldSoft(uv - vec2(0.0, e.y))) * swell;
-  float gx = (sampleB(uv + vec2(u_texel.x, 0.0)) - sampleB(uv - vec2(u_texel.x, 0.0))) * swell;
-  float gy = (sampleB(uv + vec2(0.0, u_texel.y)) - sampleB(uv - vec2(0.0, u_texel.y))) * swell;
+  float gx = (sampleB(uv + vec2(gs.x, 0.0)) - sampleB(uv - vec2(gs.x, 0.0))) * swell;
+  float gy = (sampleB(uv + vec2(0.0, gs.y)) - sampleB(uv - vec2(0.0, gs.y))) * swell;
   float dw = u_disp * 26.0 / max(u_dsmooth, 1.0);
   vec3 Ns = normalize(N - (T * (sx * dw + gx * u_relief * 22.0)
                          + Bt * (sy * dw + gy * u_relief * 22.0)) * inv);
@@ -1989,11 +2111,51 @@ function knotFrame(u) {
   const N = v3norm([n[0] - T[0] * d, n[1] - T[1] * d, n[2] - T[2] * d]);
   return [T, N, v3cross(T, N)];
 }
+/* ---- the flat-faced objects ----
+   a cube and an icosahedron over the very same (u, v) the sphere uses: take
+   the direction the sphere points in and push it out to where that direction
+   leaves the solid. for a convex body cut by planes at one distance from the
+   centre that is d / max(dot(dir, n)) over the face normals, and with the
+   normals in +/- pairs the max is just the largest |dot|. keeping the sphere's
+   parameterisation is the point — the surface bake, the pole folding, the
+   metric the solver weights its laplacian by and the wireframe all carry over
+   untouched, and the only thing that changes is where the surface sits. the
+   creases fall wherever they fall across the uv grid, so a flat-faced object
+   wants more mesh than a smooth one before its edges read straight. ------ */
+const sphereDir = (u, v) => { const a = u * TAU, b = v * Math.PI;
+  return [Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)]; };
+const solidPoint = (dir, planes, d) => {
+  let m = 1e-6;
+  for (const n of planes) m = Math.max(m, Math.abs(v3dot(dir, n)));
+  const t = d / m;
+  return [dir[0] * t, dir[1] * t, dir[2] * t];
+};
+const CUBE_N = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+/* the twenty faces of an icosahedron point at the twenty vertices of a
+   dodecahedron; ten of them up to sign, all of length sqrt(3) before the
+   normalise. */
+const PHI = (1 + Math.sqrt(5)) / 2, IPHI = 1 / PHI, R3 = Math.sqrt(3);
+const ICO_N = [
+  [1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1],
+  [0, IPHI, PHI], [0, IPHI, -PHI],
+  [IPHI, PHI, 0], [IPHI, -PHI, 0],
+  [PHI, 0, IPHI], [PHI, 0, -IPHI],
+].map(n => [n[0] / R3, n[1] / R3, n[2] / R3]);
+
 const SHAPES = {
   sphere: {
     label: 'sphere', vRatio: 0.5, vEdge: 'pole',
-    f: (u, v) => { const a = u * TAU, b = v * Math.PI;
-      return [Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)]; },
+    f: (u, v) => sphereDir(u, v),
+    axis: () => [0, 0, 0],
+  },
+  cube: {
+    label: 'cube', vRatio: 0.5, vEdge: 'pole',
+    f: (u, v) => solidPoint(sphereDir(u, v), CUBE_N, 0.66),
+    axis: () => [0, 0, 0],
+  },
+  icosahedron: {
+    label: 'icosahedron', vRatio: 0.5, vEdge: 'pole',
+    f: (u, v) => solidPoint(sphereDir(u, v), ICO_N, 0.84),
     axis: () => [0, 0, 0],
   },
   torus: {
@@ -2036,38 +2198,57 @@ const SHAPES = {
 
 /* one parametric mesh builder: positions, outward normals by finite
    difference, uvs, triangles, and a wireframe line list. */
+/* straight into typed arrays, sized up front. a mesh fine enough to carry the
+   pattern as displacement runs to a few hundred thousand vertices, and at that
+   size the array growth and the final copy out of it cost more than evaluating
+   the surface does. */
 function buildParametric(shape, nu, nv, wu, wv) {
-  const pos = [], nrm = [], uvs = [];
+  const nVert = (nu + 1) * (nv + 1);
+  const pos = new Float32Array(nVert * 3), nrm = new Float32Array(nVert * 3);
+  const uvs = new Float32Array(nVert * 2);
   const h = 4e-4;
+  let k = 0;
   for (let j = 0; j <= nv; j++) {
-    for (let i = 0; i <= nu; i++) {
-      const u = i / nu, v = j / nv;
+    const v = j / nv, vUp = Math.min(1, v + h), vDn = Math.max(0, v - h);
+    for (let i = 0; i <= nu; i++, k++) {
+      const u = i / nu;
       const p = shape.f(u, v);
       const pu = v3sub(shape.f(u + h, v), shape.f(u - h, v));
-      const pv = v3sub(shape.f(u, Math.min(1, v + h)), shape.f(u, Math.max(0, v - h)));
+      const pv = v3sub(shape.f(u, vUp), shape.f(u, vDn));
       let n = v3cross(pu, pv);
-      if (v3len(n) < 1e-9) n = v3sub(p, shape.axis(u, v));            // poles / seams
-      n = v3norm(n);
       const out = v3sub(p, shape.axis(u, v));
+      if (v3len(n) < 1e-9) n = out;                                   // poles / seams
+      n = v3norm(n);
       if (v3dot(n, out) < 0) n = [-n[0], -n[1], -n[2]];               // face outward
-      pos.push(p[0], p[1], p[2]); nrm.push(n[0], n[1], n[2]); uvs.push(u, v);
+      const k3 = k * 3, k2 = k * 2;
+      pos[k3] = p[0]; pos[k3 + 1] = p[1]; pos[k3 + 2] = p[2];
+      nrm[k3] = n[0]; nrm[k3 + 1] = n[1]; nrm[k3 + 2] = n[2];
+      uvs[k2] = u; uvs[k2 + 1] = v;
     }
   }
-  const tri = [], line = [], idx = (i, j) => j * (nu + 1) + i;
+  const idx = (i, j) => j * (nu + 1) + i;
+  const tri = new Uint32Array(nu * nv * 6);
+  let t = 0;
   for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
     const a = idx(i, j), b = idx(i + 1, j), c = idx(i + 1, j + 1), d = idx(i, j + 1);
-    tri.push(a, b, c, a, c, d);
+    tri[t] = a; tri[t + 1] = b; tri[t + 2] = c;
+    tri[t + 3] = a; tri[t + 4] = c; tri[t + 5] = d;
+    t += 6;
   }
   // wire: rings and meridians at their own spacing, but following every
   // tessellated vertex, so the lines stay smooth on a coarse wireframe.
   const su = Math.max(1, Math.round(nu / Math.max(1, wu)));
   const sv = Math.max(1, Math.round(nv / Math.max(1, wv)));
-  for (let j = 0; j <= nv; j += sv) for (let i = 0; i < nu; i++) line.push(idx(i, j), idx(i + 1, j));
-  for (let i = 0; i <= nu; i += su) for (let j = 0; j < nv; j++) line.push(idx(i, j), idx(i, j + 1));
-  return {
-    pos: new Float32Array(pos), nrm: new Float32Array(nrm), uv: new Float32Array(uvs),
-    tri: new Uint32Array(tri), line: new Uint32Array(line),
-  };
+  const nRing = Math.floor(nv / sv) + 1, nMer = Math.floor(nu / su) + 1;
+  const line = new Uint32Array((nRing * nu + nMer * nv) * 2);
+  let l = 0;
+  for (let j = 0; j <= nv; j += sv) for (let i = 0; i < nu; i++) {
+    line[l++] = idx(i, j); line[l++] = idx(i + 1, j);
+  }
+  for (let i = 0; i <= nu; i += su) for (let j = 0; j < nv; j++) {
+    line[l++] = idx(i, j); line[l++] = idx(i, j + 1);
+  }
+  return { pos, nrm, uv: uvs, tri, line: line.subarray(0, l) };
 }
 
 /* ---- the surface map ----
@@ -2143,11 +2324,43 @@ function setSurfaceUniforms(prog) {
 const project = { on: false, surface: true, shape: 'sphere', mode: 'shaded' };
 let objVao = null, objBuf = null, objCount = 0, objLineCount = 0;
 
+/* ---- how finely the object has to be tessellated ----
+   displacement is a vertex move: a feature of the field that falls between two
+   vertices cannot lift the surface at all, it can only pull the two of them
+   apart. so the mesh has to be finer than the pattern, and tiling makes the
+   pattern finer on the object without touching the mesh — which is why
+   displacement used to come apart as soon as the tiling came up. the density
+   slider now sets the tessellation for one repeat of the field and the tiling
+   multiplies it, held under a vertex budget so a high tiling cannot walk the
+   mesh off the end of what the cpu will build in a frame. --------------- */
+const MESH_BUDGET = 180000;
+function meshRes(shape) {
+  const reps = project.surface ? 1 : Math.max(1, P.pr_tile);
+  let nu = Math.max(8, Math.round(P.pr_dens * reps));
+  let nv = Math.max(6, Math.round(nu * shape.vRatio));
+  const over = Math.sqrt((nu + 1) * (nv + 1) / MESH_BUDGET);
+  if (over > 1) {
+    nu = Math.max(8, Math.round(nu / over));
+    nv = Math.max(6, Math.round(nu * shape.vRatio));
+  }
+  return [nu, nv];
+}
+
+/* rebuilding is cpu work over every vertex, and the sliders that ask for it
+   fire on every pixel of a drag. so a change only arms it, and the mesh is
+   built once the slider has come to rest — the old one keeps drawing until
+   then, which costs nothing but a moment at the wrong density. */
+let objTimer = 0;
+function scheduleRebuild(delay = 140) {
+  clearTimeout(objTimer);
+  objTimer = setTimeout(() => { objTimer = 0; rebuildObject(); }, delay);
+}
+
 function rebuildObject() {
   const shape = SHAPES[project.shape];
   if (!shape) return;
-  const nu = Math.max(8, Math.round(P.pr_dens));
-  const nv = Math.max(6, Math.round(nu * shape.vRatio));
+  clearTimeout(objTimer); objTimer = 0;
+  const [nu, nv] = meshRes(shape);
   const wu = Math.round(P.pr_wire);
   const wv = Math.max(3, Math.round(wu * shape.vRatio * 1.6));
   const m = buildParametric(shape, nu, nv, wu, wv);
@@ -2267,6 +2480,7 @@ function render3D() {
 
 function setSurface(on) {
   project.surface = on;
+  scheduleRebuild(0);   // the tiling multiplier only applies off the surface
   const b = document.getElementById('btn-surface');
   b.textContent = 'grow on surface: ' + (on ? 'on' : 'off');
   b.classList.toggle('primary', on);
@@ -2966,6 +3180,7 @@ function step() {
   gl.uniform1f(simProg.u.u_dt, P.dt);
   gl.uniform1f(simProg.u.u_biasX, P.biasX);
   gl.uniform1f(simProg.u.u_biasY, P.biasY);
+  gl.uniform1f(simProg.u.u_cellsize, P.cellsize);
   gl.uniform1i(simProg.u.u_state, 0);
   setSurfaceUniforms(simProg);
   gl.activeTexture(gl.TEXTURE0);
@@ -2987,6 +3202,9 @@ function setFieldFx(prog) {
   gl.uniform1f(prog.u.u_pulserate, P.pulserate);
   gl.uniform1f(prog.u.u_pulsewave, P.pulsewave);
   gl.uniform1f(prog.u.u_dsmooth, P.pr_soft);
+  // only the reaction runs on a coarsened lattice; the generative models write
+  // every texel, so for them a texel is the grain
+  gl.uniform1f(prog.u.u_grain, currentModel === 'reaction' ? Math.max(1, Math.round(P.cellsize)) : 1);
   // brightness pulls the ramp down; the lights the shader adds on top have to
   // come down with it or the picture stays vivid however dark the colours get
   gl.uniform1f(prog.u.u_gain, Math.max(0, 1 + Math.min(0, P.col_lift)));
