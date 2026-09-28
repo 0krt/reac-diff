@@ -157,14 +157,6 @@
 
   /* colour swatches */
   #swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 2px 0 12px; }
-  #swatches .btnrow { grid-column: 1 / -1; }
-  .swrow { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 2px 0 12px; }
-  .swrow.three { grid-template-columns: repeat(3, 1fr); }
-  input.glyphtext {
-    width: 100%; font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em;
-    color: var(--ink); background: #0d0f13; border: 1px solid var(--line-strong);
-    border-radius: 3px; padding: 6px 8px; margin-bottom: 10px; white-space: pre;
-  }
   .swatch { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
   .swatch input[type=color] {
     width: 100%; height: 26px; padding: 0; cursor: pointer; background: transparent;
@@ -377,93 +369,11 @@
     <div id="swatches" style="display:none"></div>
     <div class="sublabel">ramp shape</div>
     <select aria-label="Colour ramp shape" id="rampmode"></select>
-    <div class="btnrow" style="margin-bottom:10px">
-      <button class="act" id="btn-rampinv">ramp: forward</button>
-      <button class="act" id="btn-backdrop">backdrop: palette</button>
-    </div>
-    <div class="swrow" id="backdrop-row" style="display:none">
-      <label class="swatch"><input type="color" id="backdrop-col" value="#0a0b0e" aria-label="backdrop colour"><span>backdrop</span></label>
-    </div>
     <div id="params-color"></div>
     <div class="sublabel" style="margin-top:14px">light &amp; level</div>
     <div id="params-render"></div>
     <div class="btnrow" style="margin-top:4px">
       <button class="act" id="btn-smooth">smooth: on</button>
-    </div>
-  </div>
-
-  <div class="section" id="sec-display">
-    <h2>Display <span class="tag" id="display-tag"></span></h2>
-    <div class="sublabel">style</div>
-    <select aria-label="Display style" id="dispstyle">
-      <option value="pixels" selected>pixels — continuous</option>
-      <option value="glyphs">characters — limited set</option>
-    </select>
-    <div id="glyph-body" style="display:none">
-      <div class="sublabel">character set</div>
-      <select aria-label="Character set" id="glyphset"></select>
-      <input class="glyphtext" type="text" id="glyphcustom" aria-label="Custom characters, sparse to dense" spellcheck="false" maxlength="64" style="display:none">
-      <div class="sublabel">glyph colour</div>
-      <select aria-label="Glyph colour" id="glyphink">
-        <option value="cell" selected>palette on ground</option>
-        <option value="mono">ink on paper</option>
-        <option value="knock">knocked out of colour</option>
-      </select>
-      <div class="swrow" id="glyph-inkpaper" style="display:none">
-        <label class="swatch"><input type="color" id="glyph-ink" value="#111111" aria-label="glyph ink colour"><span>ink</span></label>
-        <label class="swatch"><input type="color" id="glyph-paper" value="#f2eee3" aria-label="glyph paper colour"><span>paper</span></label>
-      </div>
-      <div class="sublabel">glyph chosen by</div>
-      <select aria-label="Glyph chosen by" id="glyphtone">
-        <option value="level" selected>field level</option>
-        <option value="light">lit brightness</option>
-      </select>
-      <div class="btnrow" style="margin-bottom:10px">
-        <button class="act" id="btn-glyphinv">density: forward</button>
-        <button class="act" id="btn-glyphsort">sort by ink: off</button>
-      </div>
-      <div id="params-glyph"></div>
-    </div>
-
-    <div class="sublabel" style="margin-top:14px">false colour</div>
-    <select aria-label="False colour map" id="fcmap"></select>
-    <div id="fc-body" style="display:none">
-      <div class="btnrow" style="margin-bottom:10px">
-        <button class="act" id="btn-fcrev">map: forward</button>
-      </div>
-      <div id="params-fc"></div>
-    </div>
-
-    <div class="sublabel" style="margin-top:14px">isolines</div>
-    <div id="params-iso"></div>
-    <div class="swrow">
-      <label class="swatch"><input type="color" id="iso-col" value="#000000" aria-label="isoline colour"><span>line colour</span></label>
-    </div>
-
-    <div class="sublabel" style="margin-top:14px">elevation overlay</div>
-    <div class="btnrow" style="margin-bottom:10px">
-      <button class="act" id="btn-elev">elevation 0–9: off</button>
-    </div>
-    <div id="elev-body" style="display:none">
-      <select aria-label="Elevation digit colour" id="elevcolmode">
-        <option value="auto" selected>digits: contrast with what's under them</option>
-        <option value="custom">digits: one colour</option>
-      </select>
-      <div class="btnrow" style="margin-bottom:10px">
-        <button class="act" id="btn-elevzero">zeros: shown</button>
-      </div>
-      <div class="swrow" id="elev-colrow" style="display:none">
-        <label class="swatch"><input type="color" id="elev-col" value="#ffffff" aria-label="elevation digit colour"><span>digits</span></label>
-      </div>
-      <div id="params-elev"></div>
-    </div>
-    <div class="hint" style="margin-top:10px">
-      <b>characters</b> redraw the frame as a grid of glyphs from a small set, each
-      cell picking the glyph whose weight matches the field there. <b>false colour</b>
-      maps the level straight onto a scientific colour scale. <b>isolines</b> draw
-      evenly spaced contours of the level over any of it. the <b>elevation overlay</b> prints the level in each cell as a
-      digit, 0 at <b>range low</b> to 9 at <b>range high</b>. all three read on the
-      flat field and on a projected object, and png / video export capture them.
     </div>
   </div>
 
@@ -1008,14 +918,6 @@ vec3 liquidMetal(vec3 col, vec3 N, vec3 V, vec3 L, float t, vec3 tint) {
 vec3 rampTint(sampler2D ramp) {
   vec3 hi = texture(ramp, vec2(0.88, 0.5)).rgb;
   return hi / max(max(max(hi.r, hi.g), hi.b), 0.001);
-}
-// the second target the display pass writes for the post pass: the level,
-// linear across the level window and split over two bytes so isolines and
-// digits get 16 bits of it rather than 8, the lighting on its own, and
-// coverage — zero wherever nothing was drawn.
-vec4 packData(float B, float lo, float hi, float shade) {
-  float q = clamp((B - lo) / max(hi - lo, 1e-4), 0.0, 1.0) * 255.0;
-  return vec4(floor(q) / 255.0, fract(q), clamp(shade, 0.0, 1.0), 1.0);
 }`;
 
 const DISPLAY_FRAG = `#version 300 es
@@ -1025,8 +927,7 @@ uniform sampler2D u_ramp;
 uniform float u_lo, u_hi, u_relief, u_shine;
 uniform vec2  u_light;
 in vec2 v_uv;
-layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec4 outData;
+out vec4 outColor;
 void main() {
   vec2 uv = liquidWarp(v_uv);
   float base = sampleB(uv);
@@ -1054,7 +955,6 @@ void main() {
     col = liquidMetal(col, bead, V, L, t, rampTint(u_ramp));
   }
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
-  outData = packData(B, u_lo, u_hi, (0.5 + 0.7 * diff) / 1.2);
 }`;
 
 const EXTRACT_FRAG = `#version 300 es
@@ -1463,8 +1363,6 @@ const COLOR_PARAMS = [
   { id: 'col_sat',   label: 'saturation',   min: 0.00,  max: 2.00,  step: 0.01,  value: 1.00, dp: 2 },
   { id: 'col_lift',  label: 'brightness',   min: -1.00, max: 0.35,  step: 0.01,  value: 0.00, dp: 2 },
   { id: 'col_gamma', label: 'ramp curve',   min: 0.35,  max: 2.60,  step: 0.01,  value: 1.00, dp: 2 },
-  { id: 'col_contrast', label: 'ramp contrast', min: 0.25, max: 3.00, step: 0.01, value: 1.00, dp: 2 },
-  { id: 'col_bands', label: 'band steps',   min: 2,     max: 24,    step: 1,     value: 7,    dp: 0 },
   { id: 'col_spin',  label: 'hue spread',   min: -120,  max: 120,   step: 1,     value: 0,    dp: 0 },
   { id: 'col_cycle', label: 'hue drift',    min: 0.00,  max: 1.00,  step: 0.01,  value: 0.00, dp: 2 },
 ];
@@ -1474,29 +1372,6 @@ const LIQUID_PARAMS = [
   { id: 'pulse',     label: 'pulse',        min: 0.00,  max: 1.00,  step: 0.01,  value: 0.00, dp: 2 },
   { id: 'pulserate', label: 'pulse rate',   min: 0.05,  max: 3.00,  step: 0.01,  value: 0.70, dp: 2 },
   { id: 'pulsewave', label: 'pulse waves',  min: 0.00,  max: 12.0,  step: 0.1,   value: 3.0,  dp: 1 },
-];
-/* display: characters, false colour, isolines, elevation digits. sizes are
-   in css pixels, so a glyph is the same size on any screen density. */
-const GLYPH_PARAMS = [
-  { id: 'gl_cell',   label: 'cell size',    min: 4,     max: 48,    step: 1,     value: 11,   dp: 0 },
-  { id: 'gl_aspect', label: 'cell aspect',  min: 0.40,  max: 1.20,  step: 0.01,  value: 0.62, dp: 2 },
-  { id: 'gl_curve',  label: 'tone curve',   min: 0.30,  max: 3.00,  step: 0.01,  value: 1.00, dp: 2 },
-];
-const FC_PARAMS = [
-  { id: 'fc_lit',    label: 'relief shading', min: 0.00, max: 1.00, step: 0.01, value: 0.35, dp: 2 },
-  { id: 'fc_steps',  label: 'colour steps', min: 0,     max: 32,    step: 1,     value: 0,    dp: 0 },
-];
-const ISO_PARAMS = [
-  { id: 'fc_iso',    label: 'isoline steps', min: 0,    max: 40,    step: 1,     value: 0,    dp: 0 },
-  { id: 'fc_isoamt', label: 'isoline strength', min: 0, max: 1.00,  step: 0.01,  value: 0.60, dp: 2 },
-  { id: 'fc_isow',   label: 'isoline width', min: 0.5,  max: 4.0,   step: 0.1,   value: 1.0,  dp: 1 },
-];
-const ELEV_PARAMS = [
-  { id: 'el_cell',   label: 'digit spacing', min: 10,   max: 96,    step: 1,     value: 26,   dp: 0 },
-  { id: 'el_alpha',  label: 'digit opacity', min: 0.00, max: 1.00,  step: 0.01,  value: 0.90, dp: 2 },
-  { id: 'el_plate',  label: 'backing plate', min: 0.00, max: 1.00,  step: 0.01,  value: 0.00, dp: 2 },
-  { id: 'el_lo',     label: 'range low',    min: 0.00,  max: 1.00,  step: 0.01,  value: 0.00, dp: 2 },
-  { id: 'el_hi',     label: 'range high',   min: 0.00,  max: 1.00,  step: 0.01,  value: 1.00, dp: 2 },
 ];
 const DRAW_PARAMS = [
   { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0 },
@@ -1554,8 +1429,7 @@ const MODEL_PARAMS = {
   ],
 };
 const paramById = {};
-[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, DRAW_PARAMS, PROJECT_PARAMS,
- GLYPH_PARAMS, FC_PARAMS, ISO_PARAMS, ELEV_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
+[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
   list.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; }));
 
 function buildParamRows(list, container, clear) {
@@ -1599,8 +1473,6 @@ function setParam(id, value, updateSlider = true) {
   // tiling shrinks the pattern on the object, so the mesh has to follow it
   if (id === 'pr_tile' && !project.surface) scheduleRebuild();
   if (id === 'pr_dist') orbit.dist = value;
-  if (id === 'gl_aspect') glyphsDirty = true;
-  if (id === 'fc_iso' || id === 'fc_isoamt') updateDisplayTag();
   if (!retuning) {
     if (id === 'kill') { kOffset = P.kill - kCrit(P.feed); updateBandNote(); }
     if (id === 'feed' || id === 'dA' || id === 'dB') retuneRanges();
@@ -1798,25 +1670,16 @@ const RAMP_MODES = {
   smooth:  { label: 'smooth',           f: t => t },
   mirror:  { label: 'mirrored',         f: t => 1 - Math.abs(2 * t - 1) },
   repeat:  { label: 'repeated — 2×',    f: t => (t * 2) % 1 },
-  bands:   { label: 'banded — band steps', f: t => {
-    const n = Math.max(2, Math.round(P.col_bands || 7));
-    return Math.min(1, Math.floor(t * n) / (n - 1));
-  } },
+  bands:   { label: 'banded — 7 steps', f: t => Math.min(1, Math.floor(t * 7) / 6) },
 };
 let rampMode = 'smooth';
 let rampTex = null, currentPalette = 0, rampBg = [0, 0, 0];
 const hexToRgb = hx => [1, 3, 5].map(i => parseInt(hx.slice(i, i + 2), 16));
 const rgbToHex = c => '#' + c.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
 
-/* the custom palette is two to eight editable stops; a preset seeds it when
-   picked, so "custom" always starts from whatever you were just looking at. */
-const STOPS_MIN = 2, STOPS_MAX = 8;
+/* the custom palette is four editable stops; a preset seeds it when picked,
+   so "custom" always starts from whatever you were just looking at. */
 let customStops = ['#050807', '#123a4f', '#3fb0c8', '#eafcff'];
-/* the ramp can run backwards, and the ground behind an object (and under the
-   characters) can be a colour of its own instead of the ramp's bottom */
-let rampInvert = false;
-const backdrop = { on: false, col: '#0a0b0e' };
-const backdropRgb = () => (backdrop.on ? hexToRgb(backdrop.col).map(v => v / 255) : rampBg);
 
 function rgbToHsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
@@ -1866,10 +1729,7 @@ function buildRamp(stops) {
   const N = 256, data = new Uint8Array(N * 4), cols = stops.map(hexToRgb);
   const shape = (RAMP_MODES[rampMode] || RAMP_MODES.smooth).f;
   for (let i = 0; i < N; i++) {
-    let x = i / (N - 1);
-    if (rampInvert) x = 1 - x;
-    x = Math.min(1, Math.max(0, (x - 0.5) * P.col_contrast + 0.5));
-    const u = Math.pow(shape(x), P.col_gamma);
+    const u = Math.pow(shape(i / (N - 1)), P.col_gamma);
     const t = u * (cols.length - 1), j = Math.min(cols.length - 2, Math.floor(t)), f = t - j;
     const mixed = [0, 1, 2].map(c => cols[j][c] * (1 - f) + cols[j + 1][c] * f);
     const shaped = shapeColor(mixed, i / (N - 1));
@@ -1902,9 +1762,9 @@ function buildPaletteUI() {
     const prev = activeStops();
     currentPalette = +sel.value;
     // stepping into custom keeps the colours you were just looking at
-    if (currentPalette < 0) customStops = pickStops(prev, customStops.length);
+    if (currentPalette < 0) customStops = pickFour(prev);
     document.getElementById('swatches').style.display = currentPalette < 0 ? '' : 'none';
-    buildSwatches();
+    syncSwatches();
     refreshRamp();
   });
   const modes = document.getElementById('rampmode');
@@ -1918,43 +1778,30 @@ function buildPaletteUI() {
   buildSwatches();
   refreshRamp();
 }
-/* a preset has five stops, the editor however many you asked for — resample
-   rather than drop one */
-function pickStops(stops, n) {
+/* a preset has five stops, the editor four — resample rather than drop one */
+function pickFour(stops) {
   const cols = stops.map(hexToRgb);
-  return Array.from({ length: n }, (_, i) => {
-    const t = i / (n - 1) * (cols.length - 1), j = Math.min(cols.length - 2, Math.floor(t)), f = t - j;
+  return [0, 1, 2, 3].map(i => {
+    const t = i / 3 * (cols.length - 1), j = Math.min(cols.length - 2, Math.floor(t)), f = t - j;
     return rgbToHex([0, 1, 2].map(c => cols[j][c] * (1 - f) + cols[j + 1][c] * f));
   });
 }
-function stopName(i, n) {
-  if (i === 0) return 'ground';
-  if (i === n - 1) return 'top';
-  return n === 4 ? ['', 'shadow', 'mid'][i] : 'stop ' + i;
-}
 function buildSwatches() {
   const wrap = document.getElementById('swatches');
-  const n = customStops.length;
-  wrap.innerHTML = customStops.map((c, i) =>
-    '<label class="swatch"><input type="color" id="sw-' + i + '" value="' + c + '" ' +
-    'aria-label="' + stopName(i, n) + ' colour"><span>' + stopName(i, n) + '</span></label>').join('') +
-    '<div class="btnrow"><button class="act" id="sw-less"' + (n <= STOPS_MIN ? ' disabled' : '') + '>− stop</button>' +
-    '<button class="act" id="sw-more"' + (n >= STOPS_MAX ? ' disabled' : '') + '>+ stop</button></div>';
-  customStops.forEach((c, i) => {
+  const names = ['background', 'shadow', 'mid', 'highlight'];
+  wrap.innerHTML = names.map((n, i) =>
+    '<label class="swatch"><input type="color" id="sw-' + i + '" value="' + customStops[i] + '" ' +
+    'aria-label="' + n + ' colour"><span>' + n + '</span></label>').join('');
+  names.forEach((n, i) => {
     document.getElementById('sw-' + i).addEventListener('input', e => {
       customStops[i] = e.target.value; currentPalette = -1;
       document.getElementById('palette').value = '-1';
       refreshRamp();
     });
   });
-  // changing the count resamples the ramp you have, so the colours stay put
-  // and only the number of handles on them changes
-  const resize = d => {
-    customStops = pickStops(customStops, Math.max(STOPS_MIN, Math.min(STOPS_MAX, n + d)));
-    buildSwatches(); refreshRamp();
-  };
-  document.getElementById('sw-less').addEventListener('click', () => resize(-1));
-  document.getElementById('sw-more').addEventListener('click', () => resize(1));
+}
+function syncSwatches() {
+  customStops.forEach((c, i) => { const el = document.getElementById('sw-' + i); if (el) el.value = c; });
 }
 
 /* ================================================================
@@ -2149,8 +1996,7 @@ uniform sampler2D u_ramp;
 uniform vec2  u_light;
 uniform float u_lo, u_hi, u_relief, u_shine, u_wire, u_disp;
 in vec3 v_pos; in vec3 v_nrm; in vec2 v_uv; in float v_travel;
-layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec4 outData;
+out vec4 outColor;
 void main() {
   vec2 uv = liquidWarp(v_uv);
   float base = sampleB(uv);
@@ -2163,7 +2009,6 @@ void main() {
   if (u_wire > 0.5) {
     vec3 w = mix(vec3(0.34, 0.36, 0.40), col, 0.45 + 0.55 * t);
     outColor = vec4(clamp(w + 0.12 * t, 0.0, 1.0), 1.0);
-    outData = packData(B, u_lo, u_hi, 1.0);
     return;
   }
 
@@ -2207,7 +2052,6 @@ void main() {
     col = liquidMetal(col, bead, V, L, t, rampTint(u_ramp));
   }
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
-  outData = packData(B, u_lo, u_hi, (0.34 + 0.78 * diff) / 1.12);
 }`;
 
 const objProg = program(OBJ_FRAG, OBJ_VERT);
@@ -2593,26 +2437,19 @@ function projectPoint(p, view, proj, w, h) {
   return [(cx / cw * 0.5 + 0.5) * w, (1 - (cy / cw * 0.5 + 0.5)) * h];
 }
 
-function render3D(target) {
+function render3D() {
   if (!objVao) rebuildObject();
-  const bg = backdropRgb();
+  const bg = rampBg;
   const eye = orbitEye(orbit.dist);
   const proj = projMatrix();
   const view = matLookAt(eye, [0, 0, 0], [0, 1, 0]);
   const ang = P.light * Math.PI / 180;
 
-  gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(bg[0], bg[1], bg[2], 1);
   gl.enable(gl.DEPTH_TEST);
-  if (target) {
-    // the level target clears to nothing drawn, not to the backdrop colour
-    gl.clearBufferfv(gl.COLOR, 0, [bg[0], bg[1], bg[2], 1]);
-    gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
-    gl.clear(gl.DEPTH_BUFFER_BIT);
-  } else {
-    gl.clearColor(bg[0], bg[1], bg[2], 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  }
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   gl.useProgram(objProg.prog);
   gl.activeTexture(gl.TEXTURE0);
@@ -3070,7 +2907,7 @@ function exportSVG() {
 function exportPNG() {
   // draw the view that is actually on screen — the object when the projection
   // is on, the flat field otherwise — then grab it
-  drawView();
+  if (project.on) render3D(); else render();
   canvas.toBlob(b => b && download(b, fileBase() + '.png'), 'image/png');
 }
 
@@ -3210,7 +3047,6 @@ function collectConfig() {
     palette: currentPalette,
     customStops: customStops.slice(),
     rampMode,
-    display: collectDisplay(),
     coupled,
     smooth: smoothDisplay,
     resolution: document.getElementById('simscale').value,
@@ -3258,8 +3094,7 @@ function applyConfig(cfg) {
   }
   setCoupled(cfg.coupled !== false);
 
-  if (Array.isArray(cfg.customStops) &&
-      cfg.customStops.length >= STOPS_MIN && cfg.customStops.length <= STOPS_MAX &&
+  if (Array.isArray(cfg.customStops) && cfg.customStops.length === 4 &&
       cfg.customStops.every(c => /^#[0-9a-fA-F]{6}$/.test(c))) {
     customStops = cfg.customStops.slice();
   }
@@ -3272,8 +3107,7 @@ function applyConfig(cfg) {
     document.getElementById('palette').value = String(currentPalette);
     document.getElementById('swatches').style.display = currentPalette < 0 ? '' : 'none';
   }
-  applyDisplay(cfg.display);
-  buildSwatches();
+  syncSwatches();
   refreshRamp();
 
   if (typeof cfg.smooth === 'boolean' && cfg.smooth !== smoothDisplay)
@@ -3386,10 +3220,10 @@ function setFieldFx(prog) {
   gl.uniform2f(prog.u.u_texel, 1 / simW, 1 / simH);
 }
 
-function render(target) {
+function render() {
   const ang = P.light * Math.PI / 180;
   gl.bindVertexArray(vao);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, target ? target.fbo : null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.useProgram(displayProg.prog);
   gl.activeTexture(gl.TEXTURE0);
@@ -3407,455 +3241,6 @@ function render(target) {
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
-/* ================================================================
-   display — characters, false colour, isolines, elevation digits.
-   when any of them is on, the frame is drawn into an offscreen target
-   that carries, beside the colour, the level of the field at every
-   pixel (and whether anything was drawn there). one pass then re-reads
-   both: the level picks a glyph from a small set, runs through a
-   false-colour map, draws isolines, or is printed as a digit 0–9.
-   because it reads the finished frame, it works the same on the flat
-   field and on a projected object.
-   ================================================================ */
-const MONO_FONT = 'ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace';
-/* each set runs sparse to dense: the first glyph is the empty ground, the
-   last is the heaviest ink the set has */
-const GLYPH_SETS = {
-  plate:  { label: 'plate — · - 3 4 ◢ ●',   chars: ' ·-34◢●' },
-  ascii:  { label: 'ascii — 10 steps',      chars: ' .:-=+*#%@' },
-  fine:   { label: 'ascii — 70 steps',      chars: ' .\'`^",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$' },
-  dots:   { label: 'dots — · ∙ • ●',        chars: ' ·∙•●' },
-  blocks: { label: 'blocks — ░ ▒ ▓ █',      chars: ' ░▒▓█' },
-  tri:    { label: 'triangles — ▵ ▴ ◢ ▲',   chars: ' ▵▴◢▲' },
-  digits: { label: 'digits — 0 … 9',        chars: '0123456789' },
-  binary: { label: 'binary — 0 1',          chars: ' 01' },
-  lines:  { label: 'lines — - = ≡',         chars: ' -=≡' },
-  custom: { label: 'custom — type your own', chars: null },
-};
-/* scientific colour scales for the false-colour view, low to high */
-const FC_MAPS = {
-  off:       { label: 'off — use the palette' },
-  turbo:     { label: 'turbo',       stops: ['#30123b', '#4145ab', '#4675ed', '#39a2fc', '#1bcfd4', '#24eca6', '#61fc6c', '#a4fc3b', '#d1e834', '#f3c63a', '#fe9b2d', '#f36315', '#d93806', '#b11901', '#7a0402'] },
-  survey:    { label: 'survey — hypsometric', stops: ['#8a1fb0', '#5a2fd8', '#2f5ff0', '#1fa4f0', '#2bd8e0', '#5ae8a8', '#b4ee4a', '#f2e43a', '#f6b02e', '#ef6a26', '#d8322a'] },
-  jet:       { label: 'jet',         stops: ['#00007f', '#0000ff', '#007fff', '#00ffff', '#7fff7f', '#ffff00', '#ff7f00', '#ff0000', '#7f0000'] },
-  viridis:   { label: 'viridis',     stops: ['#440154', '#482878', '#3e4989', '#31688e', '#26828e', '#1f9e89', '#35b779', '#6ece58', '#b5de2b', '#fde725'] },
-  magma:     { label: 'magma',       stops: ['#000004', '#180f3d', '#440f76', '#721f81', '#9e2f7f', '#cd4071', '#f1605d', '#fd9668', '#feca8d', '#fcfdbf'] },
-  inferno:   { label: 'inferno',     stops: ['#000004', '#1b0c41', '#4a0c6b', '#781c6d', '#a52c60', '#cf4446', '#ed6925', '#fb9b06', '#f7d13d', '#fcffa4'] },
-  plasma:    { label: 'plasma',      stops: ['#0d0887', '#46039f', '#7201a8', '#9c179e', '#bd3786', '#d8576b', '#ed7953', '#fb9f3a', '#fdca26', '#f0f921'] },
-  thermal:   { label: 'thermal — ironbow', stops: ['#000000', '#20005a', '#6a0a8a', '#b0206e', '#e0482e', '#f5871a', '#fbc238', '#fff3b0', '#ffffff'] },
-  terrain:   { label: 'terrain',     stops: ['#0b2a6b', '#1d5fb0', '#4fa3d9', '#d9d29a', '#6fae4f', '#2f7d3a', '#8a6a3a', '#b39a7a', '#ffffff'] },
-  coolwarm:  { label: 'cool — warm', stops: ['#3b4cc0', '#6f92f3', '#aac7fd', '#dddddd', '#f7b89c', '#e7745b', '#b40426'] },
-  spectrum:  { label: 'spectrum — cyclic', stops: ['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ff0000'] },
-  gray:      { label: 'grey',        stops: ['#000000', '#ffffff'] },
-};
-const disp = {
-  style: 'pixels', set: 'plate', custom: ' .:-=+*#%@', ink: 'cell', tone: 'level',
-  invert: false, sort: false, inkCol: '#111111', paperCol: '#f2eee3',
-  fc: 'off', fcReverse: false, isoCol: '#000000',
-  elev: false, elevAuto: true, elevCol: '#ffffff', elevZero: true,
-};
-let glyphsDirty = true, glyphCount = 1;
-
-const POST_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2DArray;
-uniform sampler2D u_scene, u_data, u_fc;
-uniform sampler2DArray u_glyphs, u_digits;
-uniform vec3  u_bg, u_ink, u_paper, u_isocol, u_elevcol;
-uniform float u_glyph, u_cell, u_aspect, u_nglyph, u_tone, u_curve, u_invert, u_inkmode;
-uniform float u_fcon, u_fclit, u_fcsteps, u_iso, u_isoamt, u_isow;
-uniform float u_elev, u_ecell, u_ealpha, u_eplate, u_elo, u_ehi, u_eauto, u_ezero;
-out vec4 outColor;
-
-float level(vec4 d) { return d.r + d.g / 255.0; }
-float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
-
-// what the pixel style shows at a point: the frame as drawn, or the level
-// through the false-colour map with as much of the frame's lighting as asked
-vec3 baseAt(vec2 px, out vec4 d) {
-  ivec2 p = clamp(ivec2(px), ivec2(0), textureSize(u_scene, 0) - 1);
-  d = texelFetch(u_data, p, 0);
-  vec3 c = texelFetch(u_scene, p, 0).rgb;
-  if (u_fcon > 0.5 && d.a > 0.5) {
-    float e = level(d);
-    if (u_fcsteps > 1.5) e = min(floor(e * u_fcsteps), u_fcsteps - 1.0) / (u_fcsteps - 1.0);
-    c = texture(u_fc, vec2(e, 0.5)).rgb * mix(1.0, 0.3 + 1.1 * d.b, u_fclit);
-  }
-  return c;
-}
-
-void main() {
-  vec2 px = gl_FragCoord.xy;
-  vec4 d;
-  vec3 col = baseAt(px, d);
-  vec3 under = col;
-  // derivatives first, while every pixel of the quad is still in step
-  float lv = level(d) * u_iso;
-  float lw = fwidth(lv);
-
-  if (u_glyph > 0.5) {
-    vec2 cs = vec2(u_cell * u_aspect, u_cell);
-    vec2 cid = floor(px / cs);
-    vec2 local = px / cs - cid;
-    // four taps across the cell, so the glyph stands for the whole cell
-    // rather than for whichever pixel happens to sit at its centre
-    vec3 cc = vec3(0.0); float ce = 0.0, cl = 0.0, cov = 0.0;
-    for (int i = 0; i < 4; i++) {
-      vec2 o = vec2(i == 1 || i == 3 ? 0.75 : 0.25, i >= 2 ? 0.75 : 0.25);
-      vec4 dd; vec3 c = baseAt((cid + o) * cs, dd);
-      cc += c * dd.a; ce += level(dd) * dd.a; cl += luma(c) * dd.a; cov += dd.a;
-    }
-    vec3 ground = u_inkmode > 0.5 && u_inkmode < 1.5 ? u_paper : u_bg;
-    if (cov < 1.5) {           // fewer than two of the four taps landed on anything
-      col = ground;
-      under = ground;
-    } else {
-      cc /= cov; ce /= cov; cl /= cov;
-      float tone = u_tone > 0.5 ? clamp(cl * 1.15, 0.0, 1.0) : ce;
-      tone = pow(tone, u_curve);
-      if (u_invert > 0.5) tone = 1.0 - tone;
-      float idx = min(floor(tone * u_nglyph), u_nglyph - 1.0);
-      float a = textureGrad(u_glyphs, vec3(local.x, 1.0 - local.y, idx),
-                            vec2(1.0 / cs.x, 0.0), vec2(0.0, 1.0 / cs.y)).a;
-      if (u_inkmode < 0.5)      col = mix(u_bg, cc, a);        // palette on ground
-      else if (u_inkmode < 1.5) col = mix(u_paper, u_ink, a);  // ink on paper
-      else                      col = mix(cc, u_bg, a);        // knocked out
-      under = u_inkmode > 1.5 ? cc : ground;
-    }
-  }
-
-  // isolines: interior levels only, so a field sitting flat at either end of
-  // the window is not drawn over solid; and not where the level jumps (an
-  // object's edge), where the width of a line would be the whole jump
-  if (u_iso > 0.5 && u_isoamt > 0.0 && d.a > 0.5 && lw < 0.35) {
-    float k = floor(lv + 0.5);
-    if (k >= 1.0 && k <= u_iso - 1.0) {
-      float dist = abs(lv - k);
-      float half_ = 0.5 * u_isow * lw;
-      float line = 1.0 - smoothstep(half_, half_ + lw, dist);
-      col = mix(col, u_isocol, line * u_isoamt);
-    }
-  }
-
-  if (u_elev > 0.5) {
-    vec2 es = vec2(u_ecell);
-    vec2 eid = floor(px / es);
-    vec2 el = px / es - eid;
-    vec4 ed;
-    vec3 ec = baseAt((eid + 0.5) * es, ed);
-    if (ed.a > 0.5) {
-      float v = clamp((level(ed) - u_elo) / max(u_ehi - u_elo, 1e-4), 0.0, 1.0);
-      float digit = min(9.0, floor(v * 10.0));
-      float show = digit > 0.5 || u_ezero > 0.5 ? 1.0 : 0.0;
-      float a = show * textureGrad(u_digits, vec3(el.x, 1.0 - el.y, digit),
-                            vec2(1.0 / es.x, 0.0), vec2(0.0, 1.0 / es.y)).a;
-      // contrast against what the digit sits on, judged once per cell so a
-      // digit never flips colour half way across itself
-      vec3 ref = u_glyph > 0.5 ? under : ec;
-      vec3 tc = u_eauto > 0.5 ? (luma(ref) > 0.42 ? vec3(0.04) : vec3(0.96)) : u_elevcol;
-      vec3 pc = luma(tc) > 0.5 ? vec3(0.0) : vec3(1.0);
-      vec2 b = abs(el - 0.5);
-      float plate = step(b.x, 0.36) * step(b.y, 0.42);
-      col = mix(col, pc, plate * u_eplate * show);
-      col = mix(col, tc, a * u_ealpha);
-    }
-  }
-  outColor = vec4(col, 1.0);
-}`;
-const postProg = program(POST_FRAG);
-
-/* ---- glyph atlases: one layer per glyph, white on clear ---- */
-function makeArrayTex() {
-  const t = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D_ARRAY, t);
-  gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return t;
-}
-const glyphTex = makeArrayTex(), digitTex = makeArrayTex();
-
-/* draws each glyph into its own cw × ch layer of a tall canvas. every glyph
-   shares one baseline and one size, fitted so the widest of the set still
-   fits the cell — so a full stop sits low and small, as it would in type. */
-function rasterGlyphs(chars, cw, ch, fill) {
-  const c = document.createElement('canvas');
-  c.width = cw; c.height = ch * chars.length;
-  const x = c.getContext('2d', { willReadFrequently: true });
-  x.font = '100px ' + MONO_FONT;
-  let widest = 1;
-  for (const g of chars) widest = Math.max(widest, x.measureText(g).width);
-  const size = Math.max(4, Math.min(ch * fill, cw * 0.94 * 100 / widest));
-  x.font = size + 'px ' + MONO_FONT;
-  x.textAlign = 'center';
-  x.textBaseline = 'alphabetic';
-  x.fillStyle = '#fff';
-  const m = x.measureText('H');
-  const cap = m.actualBoundingBoxAscent || size * 0.7;
-  const base = (ch + cap) / 2;
-  chars.forEach((g, i) => x.fillText(g, cw / 2, i * ch + base));
-  return c;
-}
-function uploadLayers(tex, cnv, w, h, n) {
-  gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-  gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, w, h, n, 0, gl.RGBA, gl.UNSIGNED_BYTE, cnv);
-  gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
-}
-function glyphChars() {
-  const src = disp.set === 'custom' ? disp.custom : GLYPH_SETS[disp.set].chars;
-  const out = Array.from(src || '').slice(0, 96);
-  return out.length ? out : [' '];
-}
-function rebuildGlyphs() {
-  glyphsDirty = false;
-  const ch = 64, cw = Math.max(16, Math.round(ch * P.gl_aspect));
-  let chars = glyphChars();
-  let cnv = rasterGlyphs(chars, cw, ch, 0.86);
-  if (disp.sort && chars.length > 1) {
-    // order by how much ink each glyph actually lays down, so any string
-    // typed in any order still runs from light to heavy
-    const x = cnv.getContext('2d');
-    const ink = chars.map((g, i) => {
-      const px = x.getImageData(0, i * ch, cw, ch).data;
-      let s = 0;
-      for (let k = 3; k < px.length; k += 4) s += px[k];
-      return { g, s, i };
-    });
-    ink.sort((a, b) => a.s - b.s || a.i - b.i);
-    chars = ink.map(o => o.g);
-    cnv = rasterGlyphs(chars, cw, ch, 0.86);
-  }
-  glyphCount = chars.length;
-  uploadLayers(glyphTex, cnv, cw, ch, chars.length);
-}
-uploadLayers(digitTex, rasterGlyphs('0123456789'.split(''), 64, 64, 0.62), 64, 64, 10);
-
-/* ---- false-colour map, a 256-texel ramp like the palette's ---- */
-const fcTex = gl.createTexture();
-gl.bindTexture(gl.TEXTURE_2D, fcTex);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-function buildFalseColour() {
-  const map = FC_MAPS[disp.fc];
-  if (!map || !map.stops) return;
-  const N = 256, data = new Uint8Array(N * 4), cols = map.stops.map(hexToRgb);
-  for (let i = 0; i < N; i++) {
-    const u = disp.fcReverse ? 1 - i / (N - 1) : i / (N - 1);
-    const t = u * (cols.length - 1), j = Math.min(cols.length - 2, Math.floor(t)), f = t - j;
-    for (let c = 0; c < 3; c++) data[i * 4 + c] = Math.round(cols[j][c] * (1 - f) + cols[j + 1][c] * f);
-    data[i * 4 + 3] = 255;
-  }
-  gl.bindTexture(gl.TEXTURE_2D, fcTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, N, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
-}
-
-/* ---- the offscreen frame: colour + level/light/coverage + depth ---- */
-let sceneTarget = null;
-function ensureScene() {
-  const w = canvas.width, h = canvas.height;
-  if (sceneTarget && sceneTarget.w === w && sceneTarget.h === h) return sceneTarget;
-  if (sceneTarget) {
-    gl.deleteTexture(sceneTarget.color); gl.deleteTexture(sceneTarget.data);
-    gl.deleteRenderbuffer(sceneTarget.depth); gl.deleteFramebuffer(sceneTarget.fbo);
-  }
-  const mk = () => {
-    const t = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    return t;
-  };
-  const color = mk(), data = mk();
-  const depth = gl.createRenderbuffer();
-  gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
-  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
-  const fbo = gl.createFramebuffer();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color, 0);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, data, 0);
-  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depth);
-  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
-    fatal('framebuffer incomplete for the display target.');
-  sceneTarget = { w, h, color, data, depth, fbo };
-  return sceneTarget;
-}
-
-const postActive = () => disp.style === 'glyphs' || disp.fc !== 'off' || disp.elev ||
-  (P.fc_iso >= 2 && P.fc_isoamt > 0);
-
-function renderPost() {
-  if (disp.style === 'glyphs' && glyphsDirty) rebuildGlyphs();
-  const dpr = canvas.width / Math.max(1, canvas.clientWidth);
-  const u = postProg.u, rgb = hx => hexToRgb(hx).map(v => v / 255);
-  gl.bindVertexArray(vao);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.useProgram(postProg.prog);
-  // units 2 and up: nothing that draws into the scene target samples them,
-  // so the target's own textures are never bound where it is being drawn
-  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, sceneTarget.color); gl.uniform1i(u.u_scene, 2);
-  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, sceneTarget.data);  gl.uniform1i(u.u_data, 3);
-  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, fcTex);             gl.uniform1i(u.u_fc, 4);
-  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D_ARRAY, glyphTex);    gl.uniform1i(u.u_glyphs, 5);
-  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D_ARRAY, digitTex);    gl.uniform1i(u.u_digits, 6);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.uniform3fv(u.u_bg, backdropRgb());
-  gl.uniform3fv(u.u_ink, rgb(disp.inkCol));
-  gl.uniform3fv(u.u_paper, rgb(disp.paperCol));
-  gl.uniform3fv(u.u_isocol, rgb(disp.isoCol));
-  gl.uniform3fv(u.u_elevcol, rgb(disp.elevCol));
-  gl.uniform1f(u.u_glyph, disp.style === 'glyphs' ? 1 : 0);
-  gl.uniform1f(u.u_cell, Math.max(2, P.gl_cell * dpr));
-  gl.uniform1f(u.u_aspect, P.gl_aspect);
-  gl.uniform1f(u.u_nglyph, glyphCount);
-  gl.uniform1f(u.u_tone, disp.tone === 'light' ? 1 : 0);
-  gl.uniform1f(u.u_curve, P.gl_curve);
-  gl.uniform1f(u.u_invert, disp.invert ? 1 : 0);
-  gl.uniform1f(u.u_inkmode, { cell: 0, mono: 1, knock: 2 }[disp.ink] || 0);
-  gl.uniform1f(u.u_fcon, disp.fc !== 'off' ? 1 : 0);
-  gl.uniform1f(u.u_fclit, P.fc_lit);
-  gl.uniform1f(u.u_fcsteps, P.fc_steps);
-  gl.uniform1f(u.u_iso, P.fc_iso);
-  gl.uniform1f(u.u_isoamt, P.fc_isoamt);
-  gl.uniform1f(u.u_isow, P.fc_isow * dpr);
-  gl.uniform1f(u.u_elev, disp.elev ? 1 : 0);
-  gl.uniform1f(u.u_ecell, Math.max(4, P.el_cell * dpr));
-  gl.uniform1f(u.u_ealpha, P.el_alpha);
-  gl.uniform1f(u.u_eplate, P.el_plate);
-  gl.uniform1f(u.u_elo, Math.min(P.el_lo, P.el_hi - 0.01));
-  gl.uniform1f(u.u_ehi, P.el_hi);
-  gl.uniform1f(u.u_eauto, disp.elevAuto ? 1 : 0);
-  gl.uniform1f(u.u_ezero, disp.elevZero ? 1 : 0);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
-}
-
-/* the frame as it should appear: straight to the canvas when nothing on the
-   display panel is in use, through the offscreen target and the post pass
-   when something is */
-function drawView() {
-  const post = postActive();
-  const target = post ? ensureScene() : null;
-  if (project.on) render3D(target); else render(target);
-  if (post) renderPost();
-}
-
-/* ---- display panel ---- */
-function updateDisplayTag() {
-  const bits = [];
-  if (disp.style === 'glyphs') bits.push('chars');
-  if (disp.fc !== 'off') bits.push(disp.fc);
-  if (P.fc_iso >= 2 && P.fc_isoamt > 0) bits.push('iso');
-  if (disp.elev) bits.push('0–9');
-  document.getElementById('display-tag').textContent = bits.join(' · ');
-}
-function toggleLabel(id, text, on) {
-  const b = document.getElementById(id);
-  b.textContent = text;
-  b.classList.toggle('primary', on);
-}
-function syncDisplayUI() {
-  const $ = id => document.getElementById(id);
-  $('dispstyle').value = disp.style;
-  $('glyph-body').style.display = disp.style === 'glyphs' ? '' : 'none';
-  $('glyphset').value = disp.set;
-  $('glyphcustom').style.display = disp.set === 'custom' ? '' : 'none';
-  $('glyphcustom').value = disp.custom;
-  $('glyphink').value = disp.ink;
-  $('glyph-inkpaper').style.display = disp.ink === 'mono' ? '' : 'none';
-  $('glyph-ink').value = disp.inkCol;
-  $('glyph-paper').value = disp.paperCol;
-  $('glyphtone').value = disp.tone;
-  toggleLabel('btn-glyphinv', 'density: ' + (disp.invert ? 'inverted' : 'forward'), disp.invert);
-  toggleLabel('btn-glyphsort', 'sort by ink: ' + (disp.sort ? 'on' : 'off'), disp.sort);
-  $('fcmap').value = disp.fc;
-  $('fc-body').style.display = disp.fc !== 'off' ? '' : 'none';
-  toggleLabel('btn-fcrev', 'map: ' + (disp.fcReverse ? 'reversed' : 'forward'), disp.fcReverse);
-  $('iso-col').value = disp.isoCol;
-  toggleLabel('btn-elev', 'elevation 0–9: ' + (disp.elev ? 'on' : 'off'), disp.elev);
-  $('elev-body').style.display = disp.elev ? '' : 'none';
-  $('elevcolmode').value = disp.elevAuto ? 'auto' : 'custom';
-  toggleLabel('btn-elevzero', 'zeros: ' + (disp.elevZero ? 'shown' : 'hidden'), !disp.elevZero);
-  $('elev-colrow').style.display = disp.elevAuto ? 'none' : '';
-  $('elev-col').value = disp.elevCol;
-  toggleLabel('btn-rampinv', 'ramp: ' + (rampInvert ? 'inverted' : 'forward'), rampInvert);
-  toggleLabel('btn-backdrop', 'backdrop: ' + (backdrop.on ? 'custom' : 'palette'), backdrop.on);
-  $('backdrop-row').style.display = backdrop.on ? '' : 'none';
-  $('backdrop-col').value = backdrop.col;
-  updateDisplayTag();
-}
-function buildDisplayUI() {
-  const $ = id => document.getElementById(id);
-  const fill = (sel, table) => {
-    for (const k in table) {
-      const o = document.createElement('option');
-      o.value = k; o.textContent = table[k].label; sel.appendChild(o);
-    }
-  };
-  fill($('glyphset'), GLYPH_SETS);
-  fill($('fcmap'), FC_MAPS);
-  buildParamRows(GLYPH_PARAMS, $('params-glyph'), false);
-  buildParamRows(FC_PARAMS, $('params-fc'), false);
-  buildParamRows(ISO_PARAMS, $('params-iso'), false);
-  buildParamRows(ELEV_PARAMS, $('params-elev'), false);
-
-  const on = (id, ev, fn) => $(id).addEventListener(ev, e => { fn(e); syncDisplayUI(); });
-  on('dispstyle', 'change', e => { disp.style = e.target.value; });
-  on('glyphset', 'change', e => { disp.set = e.target.value; glyphsDirty = true; });
-  on('glyphcustom', 'input', e => { disp.custom = e.target.value; glyphsDirty = true; });
-  on('glyphink', 'change', e => { disp.ink = e.target.value; });
-  on('glyph-ink', 'input', e => { disp.inkCol = e.target.value; });
-  on('glyph-paper', 'input', e => { disp.paperCol = e.target.value; });
-  on('glyphtone', 'change', e => { disp.tone = e.target.value; });
-  on('btn-glyphinv', 'click', () => { disp.invert = !disp.invert; });
-  on('btn-glyphsort', 'click', () => { disp.sort = !disp.sort; glyphsDirty = true; });
-  on('fcmap', 'change', e => { disp.fc = e.target.value; buildFalseColour(); });
-  on('btn-fcrev', 'click', () => { disp.fcReverse = !disp.fcReverse; buildFalseColour(); });
-  on('iso-col', 'input', e => { disp.isoCol = e.target.value; });
-  on('btn-elev', 'click', () => { disp.elev = !disp.elev; });
-  on('btn-elevzero', 'click', () => { disp.elevZero = !disp.elevZero; });
-  on('elevcolmode', 'change', e => { disp.elevAuto = e.target.value === 'auto'; });
-  on('elev-col', 'input', e => { disp.elevCol = e.target.value; });
-  on('btn-rampinv', 'click', () => { rampInvert = !rampInvert; refreshRamp(); });
-  on('btn-backdrop', 'click', () => { backdrop.on = !backdrop.on; });
-  on('backdrop-col', 'input', e => { backdrop.col = e.target.value; });
-  syncDisplayUI();
-}
-
-/* the display panel's share of a preset file */
-function collectDisplay() {
-  return Object.assign({}, disp, { rampInvert, backdrop: Object.assign({}, backdrop) });
-}
-function applyDisplay(d) {
-  if (!d || typeof d !== 'object') return;
-  const hex = v => typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v);
-  const pick = (k, ok) => { if (ok(d[k])) disp[k] = d[k]; };
-  pick('style', v => v === 'pixels' || v === 'glyphs');
-  pick('set', v => typeof v === 'string' && GLYPH_SETS[v]);
-  pick('custom', v => typeof v === 'string');
-  disp.custom = Array.from(disp.custom).slice(0, 64).join('');
-  pick('ink', v => ['cell', 'mono', 'knock'].includes(v));
-  pick('tone', v => v === 'level' || v === 'light');
-  pick('fc', v => typeof v === 'string' && FC_MAPS[v]);
-  ['invert', 'sort', 'fcReverse', 'elev', 'elevAuto', 'elevZero'].forEach(k => pick(k, v => typeof v === 'boolean'));
-  ['inkCol', 'paperCol', 'isoCol', 'elevCol'].forEach(k => pick(k, hex));
-  if (typeof d.rampInvert === 'boolean') rampInvert = d.rampInvert;
-  if (d.backdrop && typeof d.backdrop === 'object') {
-    if (typeof d.backdrop.on === 'boolean') backdrop.on = d.backdrop.on;
-    if (hex(d.backdrop.col)) backdrop.col = d.backdrop.col;
-  }
-  glyphsDirty = true;
-  buildFalseColour();
-  syncDisplayUI();
-}
-
 function frame() {
   if (!paused) simTime += 0.016;
   if (!paused && P.col_cycle > 0) { rampPhase += P.col_cycle * 0.0022; refreshRamp(); }
@@ -3868,7 +3253,7 @@ function frame() {
   } else {
     renderGenerative();
   }
-  drawView();
+  if (project.on) render3D(); else render();
   frames++;
   const now = performance.now();
   if (now - lastFpsT > 500) {
@@ -3968,7 +3353,6 @@ buildParamRows(DRAW_PARAMS, document.getElementById('params-brush'), false);
 buildParamRows(PROJECT_PARAMS, document.getElementById('params-project'), false);
 buildPresets();
 buildPaletteUI();
-buildDisplayUI();
 selectModel('reaction');
 setCoupled(true);
 markPresetCustom();

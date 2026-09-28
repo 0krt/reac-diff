@@ -115,17 +115,11 @@ flat field as before.
 
 The fifteen palettes are starting points, not the whole choice:
 
-- **Custom palette** — two to eight colour pickers, ground to top, with
-  `+ stop` / `− stop` to change the count (the ramp is resampled, so the colours
-  stay where they were). Stepping into `custom` seeds them from whichever preset
-  you were looking at.
-- **Ramp shape** — smooth, mirrored, repeated, or banded; **band steps** sets
-  how many bands (2–24). The same colours read four ways, so every palette is
-  really four.
-- **Ramp direction** — run the ramp backwards, ground and top swapped.
-- **Ramp contrast** — squeezes or spreads the ramp about its middle.
-- **Backdrop** — the ground behind a projected object and under the characters
-  follows the palette by default; switch it to a colour of its own.
+- **Custom palette** — four colour pickers (background, shadow, mid,
+  highlight). Stepping into `custom` seeds them from whichever preset you were
+  looking at.
+- **Ramp shape** — smooth, mirrored, repeated, or banded into seven steps. The
+  same colours read four ways, so every palette is really four.
 - **Hue shift / saturation / brightness** — applied to the ramp itself, so they
   work on a preset and on a custom palette alike. Brightness lifts upward and
   *multiplies* downward, all the way to black at −1, and the lights the shader
@@ -136,36 +130,6 @@ The fifteen palettes are starting points, not the whole choice:
   to a duotone at the extremes.
 - **Ramp curve** — where the colours land across the level window.
 - **Hue drift** — rotates the whole ramp over time.
-
-## Display
-
-Four ways to redraw the frame, all optional and combinable. When any is on,
-the frame is drawn offscreen together with the field's level at every pixel
-(16 bits of it) and whether anything was drawn there, and one pass re-reads
-both. So they work the same on the flat field and on a projected object, and
-PNG and video export capture them.
-
-- **Characters** — the frame as a grid of glyphs from a limited set, each cell
-  taking the glyph whose weight matches the field there. Sets: plate
-  (`· - 3 4 ◢ ●`), ASCII in 10 or 70 steps, dots, blocks, triangles, digits,
-  binary, lines, or type your own (sparse to dense; **sort by ink** measures
-  each glyph's coverage and orders them for you). Glyphs can be picked by the
-  field level or by the lit brightness, with a tone curve and an invert.
-  Colour: palette on ground (each glyph takes the colour of its cell), ink on
-  paper (two pickers), or knocked out (the glyph cut out of the cell colour).
-  Cell size and aspect are in CSS pixels.
-- **False colour** — the level mapped straight onto a scientific scale:
-  turbo, survey (hypsometric), jet, viridis, magma, inferno, plasma, thermal,
-  terrain, cool–warm, a cyclic spectrum, grey. Reversible, with an adjustable
-  amount of the relief lighting kept and optional quantising into steps.
-- **Isolines** — evenly spaced contours of the level, over any of the above,
-  with count, strength, width and colour. Only interior levels are drawn, and
-  none across a jump in level such as an object's silhouette.
-- **Elevation overlay** — prints the level in each cell as a digit 0–9: 0 at
-  **range low**, 9 at **range high** (both within the level window). Digit
-  spacing, opacity, an optional backing plate, zeros shown or hidden, and a
-  colour that either contrasts automatically with what is underneath or is
-  fixed.
 
 ## Liquid and pulse
 
@@ -259,7 +223,7 @@ Both work on the pattern rather than on the surface it sits on:
 - **Video export** — records the live canvas to WebM via MediaRecorder
   (VP9/VP8, 60 fps target).
 - **Preset files** — `save json` writes the whole panel to a file: the model
-  and its own parameters, the colour section, the display section, liquid and pulse, the projection,
+  and its own parameters, the colour section, liquid and pulse, the projection,
   the camera and the resolution. `load json` puts them all back, applying them
   in the order the UI depends on and restoring a saved kill rate exactly rather
   than pulling it back onto the curve.
