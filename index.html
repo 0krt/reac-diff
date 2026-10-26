@@ -303,6 +303,10 @@
 
   <div class="section" id="sec-draw">
     <h2>Draw</h2>
+    <div class="toolrow" id="targets">
+      <button class="tool active" data-target="pattern">paint pattern</button>
+      <button class="tool" data-target="map">paint map</button>
+    </div>
     <div class="toolrow" id="tools">
       <button class="tool active" data-tool="brush">brush</button>
       <button class="tool" data-tool="line">line</button>
@@ -321,6 +325,36 @@
     <div class="hint" style="margin-top:10px">
       draw while <b>paused</b> to sketch a seed without running the reaction. shapes: drag to size.
       hold <b>shift</b> to erase. imported svg is stamped as chemical B.
+      <b>paint map</b> sends the same tools to the parameter map below instead.
+    </div>
+  </div>
+
+  <div class="section" id="sec-map">
+    <h2>Parameter map <span class="tag" id="map-tag"></span></h2>
+    <div class="btnrow" style="margin-bottom:10px">
+      <button class="act" id="btn-mapon">map: off</button>
+      <button class="act" id="btn-mapshow">show map: off</button>
+    </div>
+    <div id="params-map"></div>
+    <div class="sublabel" style="margin-top:6px">fill the map</div>
+    <div class="btnrow" style="margin-bottom:6px">
+      <button class="act" id="btn-mapimage">import image</button>
+      <button class="act" id="btn-mapgrad">gradient</button>
+      <button class="act" id="btn-mapradial">radial</button>
+    </div>
+    <div class="btnrow">
+      <button class="act" id="btn-mapinvert">invert</button>
+      <button class="act" id="btn-mapclear">clear</button>
+    </div>
+    <input aria-label="Import an image as the parameter map" type="file" id="mapfile" accept="image/*" style="display:none">
+    <div class="hint" style="margin-top:10px">
+      a greyscale map laid over the field. black runs the reaction on the main
+      sliders; white runs it on the <b>map</b> feed, kill, speed and feature size;
+      grey blends between them, so the pattern changes kind and growth rate across
+      the frame. the map kill is measured from the live curve at the map feed, so
+      every blend stays alive.<br><br>
+      <b>import image</b> loads a photo as the map — dark areas take the map
+      regime, contrast is stretched to the full range. <b>invert</b> swaps them.
     </div>
   </div>
 
@@ -534,6 +568,14 @@ uniform vec2  u_texel;
 uniform float u_dA, u_dB, u_feed, u_kill, u_dt, u_biasX, u_biasY;
 uniform float u_cellsize;   // how large one cell of the reaction is asked to be
 uniform float u_vmode;   // 0 the field wraps in v · 1 poles at both ends · 2 open rims
+/* the parameter map. .r is how far this texel sits toward the second regime:
+   0 runs on the main sliders, 1 on the map's own feed, kill offset, speed and
+   feature size, and anything between is the blend. kill is not blended
+   directly — the live band follows a curve, and the straight line between two
+   points on it dips out of the band — so the offset from k_c is blended and
+   the curve is evaluated at the blended feed. */
+uniform sampler2D u_map;
+uniform float u_mapon, u_feed2, u_koff, u_koff2, u_rate2, u_size2, u_dtcap;
 in vec2 v_uv;
 out vec4 outColor;
 
@@ -690,6 +732,21 @@ void main() {
   if (!onCentre(v_uv, cell)) { outColor = vec4(readState(v_uv, cell), 0.0, 1.0); return; }
   vec2 c = readState(v_uv, cell);
 
+  float feed = u_feed, kill = u_kill, dt = u_dt;
+  if (u_mapon > 0.5) {
+    float m = texture(u_map, v_uv).r;
+    feed = mix(u_feed, u_feed2, m);
+    kill = sqrt(feed) * 0.5 - feed + mix(u_koff, u_koff2, m);
+    // a smaller feature is a shorter diffusion length — the same damping the
+    // cell size uses below a whole cell, and just as free. it only ever
+    // lowers the weights, so the scheme keeps its headroom.
+    float s = mix(1.0, u_size2, m);
+    w *= s * s;
+    // a faster region may not step past the stability cap; a slower one can
+    // go as slow as it likes
+    dt = min(u_dt * mix(1.0, u_rate2, m), max(u_dt, u_dtcap));
+  }
+
   float wd = 0.5 * (w.x + w.y);                        // diagonal taps
   float centre = 0.4 * w.x + 0.4 * w.y + 0.2 * wd;     // keeps a flat field flat
 
@@ -710,9 +767,9 @@ void main() {
   // timestep, so the diffusive part of the update — and its stability — is
   // exactly what it was, and only the reaction integrates more slowly
   vec2 next = c + vec2(
-    u_dA * boost * lap.r - reaction + u_feed * (1.0 - A),
-    u_dB * boost * lap.g + reaction - (u_kill + u_feed) * B
-  ) * (u_dt / boost);
+    u_dA * boost * lap.r - reaction + feed * (1.0 - A),
+    u_dB * boost * lap.g + reaction - (kill + feed) * B
+  ) * (dt / boost);
   outColor = vec4(clamp(next, 0.0, 1.0), 0.0, 1.0);
 }`;
 
@@ -924,7 +981,8 @@ const DISPLAY_FRAG = `#version 300 es
 precision highp float;
 ${FIELD_FX}
 uniform sampler2D u_ramp;
-uniform float u_lo, u_hi, u_relief, u_shine;
+uniform sampler2D u_map;
+uniform float u_lo, u_hi, u_relief, u_shine, u_mapshow;
 uniform vec2  u_light;
 in vec2 v_uv;
 out vec4 outColor;
@@ -953,6 +1011,11 @@ void main() {
     float sy = (fieldSoft(uv + vec2(0.0, gs.y)) - fieldSoft(uv - vec2(0.0, gs.y))) * swell;
     vec3 bead = normalize(vec3(-sx, -sy, 0.0) * beadSlope() + vec3(0.0, 0.0, 1.0));
     col = liquidMetal(col, bead, V, L, t, rampTint(u_ramp));
+  }
+  // the parameter map, tinted over the pattern while it is being painted
+  if (u_mapshow > 0.0) {
+    float m = texture(u_map, v_uv).r;
+    col = mix(col, vec3(1.0, 0.36, 0.42), m * 0.5 * u_mapshow);
   }
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
@@ -1027,7 +1090,42 @@ ${NOISE}
 ${NOISE3}
 ${SURFACE}
 uniform vec2 u_res; uniform float u_time, u_seed, u_count, u_gap, u_smooth, u_jitter, u_drift;
+uniform float u_wall, u_frame;
 in vec2 v_uv; out vec4 outColor;
+
+/* a cell is the intersection of half-planes, one per neighbour, so the
+   distance in from its border is the least of the distances to those
+   bisectors. a plain min gives the polygon with knife corners, and the old
+   shading — a smoothstep across that distance — only blurred them into a
+   smudge. rounding is done the way a rounded box is: shrink the cell by the
+   radius, then measure back out from the shrunk polygon. a point that is
+   closer than the radius to only one wall is unaffected — the straight runs
+   stay straight and the gap between two cells stays exactly the gap — and
+   where it is closer to two, at a corner, the two shortfalls add like the
+   legs of a right triangle and the corner comes out as an arc.
+
+   each wall is folded in with wallAdd: .x keeps the plain min, .y and .z the
+   squared shortfalls against the outer edge of the cell and against the inner
+   edge of its wall, so a hollow cell is rounded inside as well as out. */
+void wallAdd(inout vec3 acc, float d) {
+  acc.x = min(acc.x, d);
+  float ro = u_gap + u_smooth, ri = ro + u_wall;
+  float vo = max(ro - d, 0.0), vi = max(ri - d, 0.0);
+  acc.y += vo * vo; acc.z += vi * vi;
+}
+float roundedAt(float plain, float short2, float r) { return short2 > 0.0 ? r - sqrt(short2) : plain; }
+// the cell starts at the gap, and with a wall set it is hollow: a ring of that
+// thickness and empty inside. the edges are antialiased over about a texel,
+// measured with fwidth, so they stay crisp at any cell count.
+float shapeCell(vec3 acc) {
+  float ro = u_gap + u_smooth;
+  float eo = roundedAt(acc.x, acc.y, ro);
+  float aa = max(fwidth(eo), 1e-5) * 0.8;
+  float outer = smoothstep(u_gap - aa, u_gap + aa, eo);
+  if (u_wall <= 0.0) return outer;
+  float ei = roundedAt(acc.x, acc.z, ro + u_wall);
+  return outer * (1.0 - smoothstep(u_gap + u_wall - aa, u_gap + u_wall + aa, ei));
+}
 
 // the same construction one dimension up, evaluated at a point on the object.
 // cells are volumes now, and the surface cuts through them — which is what
@@ -1041,7 +1139,7 @@ vec3 site3(vec3 cell) {
                               sin(u_time * u_drift * 0.93 + 6.2831 * ph.z));
   return o;
 }
-float voronoi3(vec3 p) {
+vec3 voronoi3(vec3 p) {
   vec3 n = floor(p), f = fract(p);
   vec3 mr = vec3(0.0), mg = vec3(0.0); float md = 8.0;
   for (int k = -1; k <= 1; k++) for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
@@ -1050,15 +1148,15 @@ float voronoi3(vec3 p) {
     float d = dot(r, r);
     if (d < md) { md = d; mr = r; mg = g; }
   }
-  float border = 8.0;
+  vec3 acc = vec3(8.0, 0.0, 0.0);
   for (int k = -1; k <= 1; k++) for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
     vec3 g = mg + vec3(float(i), float(j), float(k));
     vec3 r = g + site3(n + g) - f;
     vec3 diff = r - mr;
     float dd = dot(diff, diff);
-    if (dd > 1e-5) border = min(border, dot(0.5 * (mr + r), diff * inversesqrt(dd)));
+    if (dd > 1e-5) wallAdd(acc, dot(0.5 * (mr + r), diff * inversesqrt(dd)));
   }
-  return border;
+  return acc;
 }
 
 // a cell's site, in lattice space. the offset is a stable per-cell hash, so a
@@ -1077,8 +1175,7 @@ vec2 site(vec2 cell) {
 void main() {
   vec2 aspect = vec2(u_res.x / u_res.y, 1.0);
   if (u_surface > 0.5) {
-    float b = voronoi3(domainAt(v_uv, aspect, u_count));
-    outColor = vec4(vec3(smoothstep(u_gap, u_gap + u_smooth + 0.001, b)), 1.0);
+    outColor = vec4(vec3(shapeCell(voronoi3(domainAt(v_uv, aspect, u_count)))), 1.0);
     return;
   }
   vec2 p = v_uv * aspect * u_count;
@@ -1095,19 +1192,27 @@ void main() {
     if (d < md) { md = d; mr = r; mg = g; }
   }
 
-  // distance to the nearest border: half way to each neighbouring site,
-  // measured along the line joining them.
-  float border = 8.0;
+  // distance to each border: half way to each neighbouring site, measured
+  // along the line joining them.
+  vec3 acc = vec3(8.0, 0.0, 0.0);
   for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
     vec2 g = mg + vec2(float(i), float(j));
     vec2 r = g + site(n + g) - f;
     vec2 diff = r - mr;
     float dd = dot(diff, diff);
-    if (dd > 1e-5) border = min(border, dot(0.5 * (mr + r), diff * inversesqrt(dd)));
+    if (dd > 1e-5) wallAdd(acc, dot(0.5 * (mr + r), diff * inversesqrt(dd)));
   }
 
-  float cell = smoothstep(u_gap, u_gap + u_smooth + 0.001, border);
-  outColor = vec4(vec3(cell), 1.0);
+  // the frame is four more walls: the edges of the canvas, set in by the
+  // frame width. the cells along it are cut square to the frame and round
+  // their corners against it like against any other border, and the corners
+  // of the frame itself come out rounded too.
+  if (u_frame > 0.0) {
+    vec2 ext = aspect * u_count;
+    wallAdd(acc, p.x - u_frame); wallAdd(acc, ext.x - p.x - u_frame);
+    wallAdd(acc, p.y - u_frame); wallAdd(acc, ext.y - p.y - u_frame);
+  }
+  outColor = vec4(vec3(shapeCell(acc)), 1.0);
 }`;
 
 const MARBLE_FRAG = `#version 300 es
@@ -1373,6 +1478,19 @@ const LIQUID_PARAMS = [
   { id: 'pulserate', label: 'pulse rate',   min: 0.05,  max: 3.00,  step: 0.01,  value: 0.70, dp: 2 },
   { id: 'pulsewave', label: 'pulse waves',  min: 0.00,  max: 12.0,  step: 0.1,   value: 3.0,  dp: 1 },
 ];
+/* the second regime the parameter map blends toward. kill is an offset from
+   the live curve at the map feed, so the map can never drive a blend off the
+   band — see the sim shader. feature size only goes down: it is a damping of
+   the diffusion weights, which the scheme is always stable in. */
+const MAP_PARAMS = [
+  { id: 'map_feed',  label: 'map feed',        min: 0.010, max: 0.110, step: 0.0001, value: 0.0367, dp: 4 },
+  { id: 'map_koff',  label: 'map kill vs k_c', min: -0.005, max: 0.008, step: 0.0001, value: 0.0058, dp: 4,
+    fmt: v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(4) },
+  { id: 'map_rate',  label: 'map speed',       min: 0.05,  max: 2.00,  step: 0.01,   value: 1.00,   dp: 2 },
+  { id: 'map_size',  label: 'map feature size',min: 0.45,  max: 1.00,  step: 0.01,   value: 1.00,   dp: 2 },
+  { id: 'map_level', label: 'paint value',     min: 0.00,  max: 1.00,  step: 0.01,   value: 1.00,   dp: 2 },
+  { id: 'map_soft',  label: 'paint softness',  min: 0.00,  max: 1.00,  step: 0.01,   value: 0.60,   dp: 2 },
+];
 const DRAW_PARAMS = [
   { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0 },
   { id: 'stab',   label: 'stabilizer',    min: 0.00,  max: 0.92,  step: 0.01,   value: 0.55,   dp: 2 },
@@ -1401,9 +1519,13 @@ const MODEL_PARAMS = {
   ],
   voronoi: [
     { id: 'vor_count',  label: 'cell count',  min: 3,    max: 30,   step: 1,     value: 9,    dp: 0 },
-    { id: 'vor_gap',    label: 'cell gap',    min: 0.00, max: 0.35, step: 0.005, value: 0.07, dp: 3 },
-    { id: 'vor_smooth', label: 'cell smooth', min: 0.00, max: 0.35, step: 0.005, value: 0.09, dp: 3 },
-    { id: 'vor_jitter', label: 'jitter',      min: 0.00, max: 1.00, step: 0.01,  value: 0.90, dp: 2 },
+    { id: 'vor_gap',    label: 'cell gap',    min: 0.00, max: 0.35, step: 0.005, value: 0.05, dp: 3 },
+    { id: 'vor_smooth', label: 'cell smooth', min: 0.00, max: 0.50, step: 0.005, value: 0.12, dp: 3 },
+    { id: 'vor_wall',   label: 'wall thickness', min: 0.00, max: 0.40, step: 0.005, value: 0.00, dp: 3,
+      fmt: v => (v <= 0 ? 'solid' : v.toFixed(3)) },
+    { id: 'vor_frame',  label: 'frame',       min: 0.00, max: 0.50, step: 0.005, value: 0.00, dp: 3,
+      fmt: v => (v <= 0 ? 'off' : v.toFixed(3)) },
+    { id: 'vor_jitter', label: 'jitter',      min: 0.00, max: 1.00, step: 0.01,  value: 0.75, dp: 2 },
     { id: 'vor_drift',  label: 'drift',       min: 0.00, max: 2.50, step: 0.01,  value: 0.00, dp: 2 },
   ],
   marble: [
@@ -1429,7 +1551,7 @@ const MODEL_PARAMS = {
   ],
 };
 const paramById = {};
-[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
+[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, MAP_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
   list.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; }));
 
 function buildParamRows(list, container, clear) {
@@ -1469,6 +1591,7 @@ function setParam(id, value, updateSlider = true) {
   if (updateSlider === false && RENDER_PARAMS.some(r => r.id === id)) modelRenderTouched[id] = true;
   if (COLOR_PARAMS.some(c => c.id === id)) refreshRamp();
   if (LIQUID_PARAMS.some(c => c.id === id)) updateLiquidTag();
+  if (id === 'map_feed' || id === 'map_koff') updateMapTag();
   if (id === 'pr_dens' || id === 'pr_wire') scheduleRebuild();
   // tiling shrinks the pattern on the object, so the mesh has to follow it
   if (id === 'pr_tile' && !project.surface) scheduleRebuild();
@@ -1597,7 +1720,7 @@ function setCoupled(v) {
 function refreshParamUI(id) {
   const d = paramById[id];
   const valEl = document.getElementById('val-' + id);
-  if (valEl) valEl.textContent = P[id].toFixed(d.dp);
+  if (valEl) valEl.textContent = d.fmt ? d.fmt(P[id]) : P[id].toFixed(d.dp);
 }
 function updateLiquidTag() {
   const el = document.getElementById('liquid-tag');
@@ -1877,9 +2000,15 @@ const MODELS = {
           'feel the grid it is on and the spots square up; a little above a whole number ' +
           'it runs up to twice as slow, which steps / frame buys back.' },
   voronoi:   { label: 'voronoi cells',  generative: true, program: () => voronoiProg,
-    note: 'organic cellular partition — gap and smooth control the borders.',
+    note: 'organic cellular partition. gap is the space between cells, smooth rounds their ' +
+          'corners, wall thickness hollows them into rings, and frame closes the pattern ' +
+          'inside a border of its own.',
+    // the field is two-tone with a crisp edge, so it wants a narrow level
+    // window and only a little relief — a bevel on the rim, not a lump
+    render: { colLo: 0.25, colHi: 0.75, relief: 0.05 },
     set(u) { gl.uniform1f(u.u_count, P.vor_count); gl.uniform1f(u.u_gap, P.vor_gap);
-      gl.uniform1f(u.u_smooth, P.vor_smooth); gl.uniform1f(u.u_jitter, P.vor_jitter); gl.uniform1f(u.u_drift, P.vor_drift); } },
+      gl.uniform1f(u.u_smooth, P.vor_smooth); gl.uniform1f(u.u_jitter, P.vor_jitter); gl.uniform1f(u.u_drift, P.vor_drift);
+      gl.uniform1f(u.u_wall, P.vor_wall); gl.uniform1f(u.u_frame, P.vor_frame); } },
   marble:    { label: 'marble veins',   generative: true, program: () => marbleProg,
     note: 'domain-warped noise — flowing marble and vein structures.',
     set(u) { gl.uniform1f(u.u_scale, P.mar_scale); gl.uniform1f(u.u_warp, P.mar_warp);
@@ -1948,6 +2077,7 @@ function selectModel(name) {
   if (name === 'reaction') retuneRanges();
   document.getElementById('preset').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('sec-draw').style.display = (name === 'reaction' && !project.on) ? '' : 'none';
+  document.getElementById('sec-map').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('row-reaction').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('row-generative').style.display = name === 'reaction' ? 'none' : '';
   document.getElementById('model-note').textContent = m.note || '';
@@ -2520,7 +2650,7 @@ function updateCursor() {
    fully independent of the reaction step (works while paused).
    ================================================================ */
 const draw = {
-  tool: 'brush', fill: false, eraseToggle: false,
+  tool: 'brush', fill: false, eraseToggle: false, target: 'pattern',
   active: false, started: false, erasing: false,
   target: [0, 0], smooth: [0, 0], prev: [0, 0],
   previewing: false, startClient: [0, 0], curClient: [0, 0], startPx: [0, 0], curPx: [0, 0],
@@ -2634,6 +2764,11 @@ function updateBrush() {
   draw.smooth[0] += (draw.target[0] - draw.smooth[0]) * (1 - s);
   draw.smooth[1] += (draw.target[1] - draw.smooth[1]) * (1 - s);
   const px = [draw.smooth[0] * simW, draw.smooth[1] * simH];
+  if (draw.target === 'map') {
+    mapStroke(toMap(draw.started ? draw.prev : px), toMap(px), mapRadius(), draw.erasing);
+    draw.started = true; draw.prev = px;
+    return;
+  }
   if (draw.started) stampShape(0, draw.prev, px, brushRadiusPx(), false, draw.erasing);
   else { stampShape(0, px, px, brushRadiusPx(), false, draw.erasing); draw.started = true; }
   draw.prev = px;
@@ -2641,6 +2776,10 @@ function updateBrush() {
 
 function commitShape() {
   const a = draw.startPx, b = draw.curPx, r = brushRadiusPx();
+  if (draw.target === 'map') {
+    mapShape(draw.tool, toMap(a), toMap(b), mapRadius(), draw.fill, draw.erasing);
+    return;
+  }
   if (draw.tool === 'line') {
     stampShape(0, a, b, r, false, draw.erasing);
   } else if (draw.tool === 'rect') {
@@ -2724,6 +2863,212 @@ function importSVG(file) {
   };
   reader.readAsText(file);
 }
+
+/* ================================================================
+   parameter map — a greyscale image laid over the field that the
+   solver reads every step. black runs the main sliders, white the map
+   regime, grey the blend. it lives in a 2-d canvas, so painting,
+   gradients and image import are all plain canvas calls, and it goes up
+   to the gpu only when it has changed. it is held in uv space: the
+   whole canvas always covers the whole field, whatever its resolution.
+   ================================================================ */
+const MAP_W = 1024;
+const mapCanvas = document.createElement('canvas');
+const mctx = mapCanvas.getContext('2d');
+const mapTex = gl.createTexture();
+const map = { on: false, show: false, used: false, dirty: true };
+
+function sizeMap() {
+  const h = Math.max(64, Math.min(2048, Math.round(MAP_W * canvas.height / Math.max(1, canvas.width))));
+  if (mapCanvas.width === MAP_W && mapCanvas.height === h) return;
+  // a resize keeps what was painted, stretched to the new frame
+  let old = null;
+  if (mapCanvas.width > 0 && map.used) {
+    old = document.createElement('canvas');
+    old.width = mapCanvas.width; old.height = mapCanvas.height;
+    old.getContext('2d').drawImage(mapCanvas, 0, 0);
+  }
+  mapCanvas.width = MAP_W; mapCanvas.height = h;
+  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, MAP_W, h);
+  if (old) mctx.drawImage(old, 0, 0, MAP_W, h);
+  map.dirty = true;
+}
+
+function uploadMap() {
+  if (!map.dirty) return;
+  // unit 3 is the map's own; binding it anywhere else would knock the field
+  // or the ramp off the unit a pass is about to read
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, mapTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, mapCanvas);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.activeTexture(gl.TEXTURE0);
+  map.dirty = false;
+}
+// the map is shown while it is being painted, or whenever it is asked for
+const mapShown = () => map.show || (draw.target === 'map' && currentModel === 'reaction' && !project.on);
+
+function setMapOn(v) {
+  map.on = v;
+  const b = document.getElementById('btn-mapon');
+  b.textContent = 'map: ' + (v ? 'on' : 'off');
+  b.classList.toggle('primary', v);
+  updateMapTag();
+}
+function setMapShow(v) {
+  map.show = v;
+  const b = document.getElementById('btn-mapshow');
+  b.textContent = 'show map: ' + (v ? 'on' : 'off');
+  b.classList.toggle('primary', v);
+}
+function updateMapTag() {
+  const el = document.getElementById('map-tag');
+  if (!el) return;
+  el.textContent = map.on
+    ? 'f ' + P.map_feed.toFixed(4) + ' · k ' + (kCrit(P.map_feed) + P.map_koff).toFixed(4)
+    : '';
+}
+// anything put on the map switches it on: painting a map nobody reads is
+// never what was meant
+function mapTouched() {
+  map.used = true; map.dirty = true;
+  if (!map.on) setMapOn(true);
+}
+
+// sim px -> map px; the canvas is y-down, the field y-up
+const toMap = px => [px[0] / simW * mapCanvas.width, (1 - px[1] / simH) * mapCanvas.height];
+const mapRadius = () => brushRadiusPx() * mapCanvas.width / simW;
+const mapGrey = erase => {
+  const v = Math.round((erase ? 0 : P.map_level) * 255);
+  return 'rgb(' + v + ',' + v + ',' + v + ')';
+};
+
+/* the brush lays soft dabs along the stroke: each one pulls the map toward
+   the paint value, fully at its core and fading to nothing at its rim, so a
+   region can be built up and blended rather than only filled. */
+function mapStroke(a, b, r, erase) {
+  const v = Math.round((erase ? 0 : P.map_level) * 255);
+  const core = r * (1 - 0.9 * P.map_soft);
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const n = Math.max(1, Math.ceil(len / Math.max(1, r * 0.3)));
+  for (let i = (len > 0 ? 1 : 0); i <= n; i++) {
+    const t = i / n, x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+    const g = mctx.createRadialGradient(x, y, core, x, y, r);
+    g.addColorStop(0, 'rgba(' + v + ',' + v + ',' + v + ',1)');
+    g.addColorStop(1, 'rgba(' + v + ',' + v + ',' + v + ',0)');
+    mctx.fillStyle = g;
+    mctx.beginPath(); mctx.arc(x, y, r, 0, Math.PI * 2); mctx.fill();
+  }
+  mapTouched();
+}
+/* line, rect and circle go through the canvas's own shapes, softened by a
+   blur where the browser has canvas filters */
+function mapShape(tool, a, b, r, fill, erase) {
+  mctx.save();
+  const soft = P.map_soft * r * 0.6;
+  if (soft > 0.5 && 'filter' in mctx) mctx.filter = 'blur(' + soft.toFixed(1) + 'px)';
+  mctx.strokeStyle = mctx.fillStyle = mapGrey(erase);
+  mctx.lineWidth = r * 2; mctx.lineCap = 'round'; mctx.lineJoin = 'round';
+  mctx.beginPath();
+  if (tool === 'line') { mctx.moveTo(a[0], a[1]); mctx.lineTo(b[0], b[1]); mctx.stroke(); }
+  else {
+    const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+    const hx = Math.abs(b[0] - a[0]) / 2, hy = Math.abs(b[1] - a[1]) / 2;
+    if (tool === 'rect') mctx.rect(cx - hx, cy - hy, hx * 2, hy * 2);
+    else mctx.ellipse(cx, cy, Math.max(0.5, hx), Math.max(0.5, hy), 0, 0, Math.PI * 2);
+    if (fill) mctx.fill(); else mctx.stroke();
+  }
+  mctx.restore();
+  mapTouched();
+}
+
+function mapGradient(radial) {
+  const w = mapCanvas.width, h = mapCanvas.height;
+  const g = radial
+    ? mctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.hypot(w, h) / 2)
+    : mctx.createLinearGradient(0, 0, w, 0);
+  g.addColorStop(0, radial ? '#fff' : '#000');
+  g.addColorStop(1, radial ? '#000' : '#fff');
+  mctx.fillStyle = g; mctx.fillRect(0, 0, w, h);
+  mapTouched();
+}
+function mapInvert() {
+  mctx.save();
+  mctx.globalCompositeOperation = 'difference';
+  mctx.fillStyle = '#fff'; mctx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+  mctx.restore();
+  mapTouched();
+}
+function mapClear() {
+  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+  map.used = false; map.dirty = true;
+}
+
+/* an image becomes the map through its luminance: cover-fitted so the whole
+   field is driven, dark read as the map regime (where a print would put ink),
+   and the range stretched to full black and white — a photo rarely spans it,
+   and a map that only reaches the middle of the blend wastes the regime. */
+function importMapImage(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    const w = mapCanvas.width, h = mapCanvas.height;
+    const iw = img.naturalWidth || img.width || w, ih = img.naturalHeight || img.height || h;
+    const s = Math.max(w / iw, h / ih);
+    mctx.fillStyle = '#fff'; mctx.fillRect(0, 0, w, h);
+    mctx.drawImage(img, (w - iw * s) / 2, (h - ih * s) / 2, iw * s, ih * s);
+    URL.revokeObjectURL(url);
+    const id = mctx.getImageData(0, 0, w, h), d = id.data;
+    const lum = new Float32Array(w * h);
+    let lo = 1, hi = 0;
+    for (let i = 0; i < w * h; i++) {
+      const l = (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255;
+      lum[i] = l; lo = Math.min(lo, l); hi = Math.max(hi, l);
+    }
+    const span = Math.max(1e-3, hi - lo);
+    for (let i = 0; i < w * h; i++) {
+      const v = Math.round((1 - (lum[i] - lo) / span) * 255);
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+    }
+    mctx.putImageData(id, 0, 0);
+    mapTouched();
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); alert('could not load that image.'); };
+  img.src = url;
+}
+// a saved map comes back as it was, stretched to the current frame
+function loadMapData(src) {
+  const img = new Image();
+  img.onload = () => {
+    mctx.drawImage(img, 0, 0, mapCanvas.width, mapCanvas.height);
+    map.used = true; map.dirty = true;
+  };
+  img.src = src;
+}
+
+document.querySelectorAll('#targets .tool').forEach(btn => {
+  btn.addEventListener('click', () => selectTarget(btn.dataset.target));
+});
+function selectTarget(t) {
+  draw.target = t;
+  document.querySelectorAll('#targets .tool').forEach(b => b.classList.toggle('active', b.dataset.target === t));
+}
+document.getElementById('btn-mapon').addEventListener('click', () => setMapOn(!map.on));
+document.getElementById('btn-mapshow').addEventListener('click', () => setMapShow(!map.show));
+document.getElementById('btn-mapgrad').addEventListener('click', () => mapGradient(false));
+document.getElementById('btn-mapradial').addEventListener('click', () => mapGradient(true));
+document.getElementById('btn-mapinvert').addEventListener('click', mapInvert);
+document.getElementById('btn-mapclear').addEventListener('click', mapClear);
+document.getElementById('btn-mapimage').addEventListener('click', () => document.getElementById('mapfile').click());
+document.getElementById('mapfile').addEventListener('change', e => {
+  if (e.target.files[0]) importMapImage(e.target.files[0]);
+  e.target.value = '';
+});
 
 /* ================================================================
    MIDI — learn + mapping
@@ -3052,6 +3397,7 @@ function collectConfig() {
     resolution: document.getElementById('simscale').value,
     projection: { on: project.on, surface: project.surface, shape: project.shape, mode: project.mode },
     view: { yaw: orbit.yaw, pitch: orbit.pitch, dist: orbit.dist },
+    map: { on: map.on, image: map.used ? mapCanvas.toDataURL('image/png') : null },
   };
 }
 
@@ -3118,6 +3464,12 @@ function applyConfig(cfg) {
     if (isFinite(vw.yaw)) orbit.yaw = vw.yaw;
     if (isFinite(vw.pitch)) orbit.pitch = Math.max(-1.45, Math.min(1.45, vw.pitch));
     if (isFinite(vw.dist)) setParam('pr_dist', vw.dist);
+  }
+  const mp = cfg.map;
+  if (mp && typeof mp === 'object') {
+    mapClear();
+    if (typeof mp.image === 'string' && mp.image.startsWith('data:image/')) loadMapData(mp.image);
+    setMapOn(!!mp.on);
   }
   markPresetCustom();
   updateModelTag();
@@ -3190,6 +3542,16 @@ function step() {
   gl.uniform1f(simProg.u.u_biasY, P.biasY);
   gl.uniform1f(simProg.u.u_cellsize, P.cellsize);
   gl.uniform1i(simProg.u.u_state, 0);
+  gl.uniform1f(simProg.u.u_mapon, map.on ? 1 : 0);
+  gl.uniform1f(simProg.u.u_feed2, P.map_feed);
+  gl.uniform1f(simProg.u.u_koff, P.kill - kCrit(P.feed));
+  gl.uniform1f(simProg.u.u_koff2, P.map_koff);
+  gl.uniform1f(simProg.u.u_rate2, P.map_rate);
+  gl.uniform1f(simProg.u.u_size2, P.map_size);
+  gl.uniform1f(simProg.u.u_dtcap, 1.15 / Math.max(P.dA, P.dB));
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, mapTex);
+  gl.uniform1i(simProg.u.u_map, 3);
   setSurfaceUniforms(simProg);
   gl.activeTexture(gl.TEXTURE0);
   const n = Math.round(P.steps);
@@ -3237,11 +3599,17 @@ function render() {
   gl.uniform1f(displayProg.u.u_relief, P.relief);
   gl.uniform1f(displayProg.u.u_shine, P.shine);
   gl.uniform2f(displayProg.u.u_light, Math.cos(ang), Math.sin(ang));
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, mapTex);
+  gl.uniform1i(displayProg.u.u_map, 3);
+  gl.uniform1f(displayProg.u.u_mapshow, (currentModel === 'reaction' && mapShown()) ? 1 : 0);
+  gl.activeTexture(gl.TEXTURE0);
   setFieldFx(displayProg);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 function frame() {
+  uploadMap();
   if (!paused) simTime += 0.016;
   if (!paused && P.col_cycle > 0) { rampPhase += P.col_cycle * 0.0022; refreshRamp(); }
   if (!paused && !orbit.dragging && orbitActive()) {
@@ -3280,6 +3648,7 @@ function resize() {
   overlay.width  = Math.round(overlay.clientWidth  * dpr);
   overlay.height = Math.round(overlay.clientHeight * dpr);
   octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sizeMap();
   allocSim(true);
 }
 window.addEventListener('resize', resize);
@@ -3350,6 +3719,7 @@ buildParamRows(COLOR_PARAMS, document.getElementById('params-color'), false);
 buildParamRows(LIQUID_PARAMS, document.getElementById('params-liquid'), false);
 buildParamRows(RENDER_PARAMS, document.getElementById('params-render'), false);
 buildParamRows(DRAW_PARAMS, document.getElementById('params-brush'), false);
+buildParamRows(MAP_PARAMS, document.getElementById('params-map'), false);
 buildParamRows(PROJECT_PARAMS, document.getElementById('params-project'), false);
 buildPresets();
 buildPaletteUI();

@@ -12,8 +12,14 @@ mapping are shared across all of them. Switch models from the panel:
 
 - **Reaction–diffusion** — the dynamic Gray–Scott solver (drawing, bias,
   presets, SVG import; all described below).
-- **Voronoi cells** — organic cellular partition with cell count, gap,
-  smoothness, jitter, and animated drift.
+- **Voronoi cells** — organic cellular partition with cell count, gap, corner
+  smoothing, wall thickness, frame, jitter, and animated drift. Cells are
+  rounded the way a rounded box is: shrunk by the radius, then measured back
+  out, so straight walls stay straight, the gap between two cells is exactly
+  the gap, and only the corners turn into arcs. Edges are antialiased to about
+  a texel. **Wall thickness** hollows each cell into a ring (rounded inside as
+  well as out; 0 is solid), and **frame** closes the pattern inside a border
+  the cells round against like any other wall.
 - **Marble veins** — domain-warped noise for flowing marble / vein structures.
 - **Metaballs 3D** — raymarched blobs merged with a smooth minimum. The field
   is the surface depth seen from the camera, so relief shading and the contour
@@ -151,6 +157,32 @@ Both work on the pattern rather than on the surface it sits on:
   and the swell drives the displacement too, so a projected object breathes
   where the pattern is thick. **Pulse rate** and **pulse waves** set its speed
   and wavelength.
+
+## Parameter map
+
+A greyscale map laid over the field that the reaction reads every step, so
+different areas grow different patterns at different rates. Black runs the
+reaction on the main sliders; white runs it on the map's own **feed**, **kill**,
+**speed** and **feature size**; grey blends between them.
+
+- **Map kill** is an offset from the live curve `k_c(f)` at the map feed, and the
+  solver blends the feed and the offset and evaluates the curve at the blended
+  feed. Blending kill directly would cut a straight line under a concave curve
+  and drop the middle of the blend out of the live band.
+- **Map speed** scales the timestep in the mapped area, held under the same
+  stability cap as the timestep slider. **Map feature size** damps the
+  diffusion weights, so features in that area come out smaller. It can only go
+  down, which the explicit scheme is always stable in.
+- **Paint map** in the Draw section sends the brush, line, rect and circle tools
+  to the map instead of the field, with a paint value and a softness. The map
+  is tinted over the pattern while you paint it, or whenever **show map** is on.
+- **Import image** loads a photo as the map: cover-fitted, read by luminance
+  with dark areas taking the map regime, contrast stretched to the full range.
+  With the default regimes (coral worms on the main sliders, mitosis spots on
+  the map) a portrait comes out as worms in the light and spots in the shadow.
+  **Gradient**, **radial**, **invert** and **clear** fill the map directly.
+- Painting or importing switches the map on. The map is saved in the preset
+  JSON as a PNG.
 
 ## Features
 
