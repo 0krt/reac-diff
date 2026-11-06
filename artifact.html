@@ -322,7 +322,7 @@
   </div>
 
   <div class="section" id="sec-map">
-    <h2>Parameter map <span class="tag" id="map-tag"></span></h2>
+    <h2>Pattern map <span class="tag" id="map-tag"></span></h2>
     <div class="btnrow" style="margin-bottom:10px">
       <button class="act" id="btn-mapon">map: off</button>
       <button class="act" id="btn-mapshow">show map: off</button>
@@ -335,6 +335,7 @@
       <button class="act" id="btn-mapradial">radial</button>
     </div>
     <div class="btnrow">
+      <button class="act" id="btn-mapnoise">noise</button>
       <button class="act" id="btn-mapinvert">invert</button>
       <button class="act" id="btn-mapclear">clear</button>
     </div>
@@ -347,6 +348,46 @@
       every blend stays alive.<br><br>
       <b>import image</b> loads a photo as the map — dark areas take the map
       regime, contrast is stretched to the full range. <b>invert</b> swaps them.
+      <b>gradient</b> runs along the gradient angle; <b>noise</b> lays soft blobs
+      at the noise scale. scale and the two direction fields below can read the
+      map too.
+    </div>
+  </div>
+
+  <div class="section" id="sec-flow">
+    <h2>Flow <span class="tag" id="flow-tag"></span></h2>
+    <select aria-label="Flow field" id="fx-flow"></select>
+    <div id="params-flow"></div>
+    <div class="hint">
+      carries the chemicals along a velocity field while they react, so the
+      pattern streams, spirals or swirls. speed is in texels per step; negative
+      runs it backwards. <b>turn</b> rotates the whole field — radial turned 45°
+      is a spiral, turned 90° it is circular. <b>along map contours</b> follows the
+      isolines of the pattern map; turned 90° it runs down its slopes.
+    </div>
+  </div>
+
+  <div class="section" id="sec-orient">
+    <h2>Orientation <span class="tag" id="orient-tag"></span></h2>
+    <select aria-label="Orientation field" id="fx-orient"></select>
+    <div id="params-orient"></div>
+    <div class="hint">
+      makes diffusion anisotropic: weaker across the field direction than along
+      it, so stripes and chains of spots line up with the field. same field
+      types and turn as flow — radial gives a sunburst, circular concentric
+      rings, <b>along map contours</b> lays the pattern along the map's shapes.
+    </div>
+  </div>
+
+  <div class="section" id="sec-scale">
+    <h2>Scale <span class="tag" id="scale-tag"></span></h2>
+    <select aria-label="Scale field" id="fx-scale"></select>
+    <div id="params-scale"></div>
+    <div class="hint">
+      varies the size of the pattern across the frame, from the scale at black
+      to the scale at white of the chosen field (radial is black at the centre).
+      under 1 the diffusion is shortened; over 1 the reaction is slowed instead,
+      so large regions grow more slowly — by the square of the scale.
     </div>
   </div>
 
@@ -568,8 +609,78 @@ uniform float u_vmode;   // 0 the field wraps in v · 1 poles at both ends · 2 
    the curve is evaluated at the blended feed. */
 uniform sampler2D u_map;
 uniform float u_mapon, u_feed2, u_koff, u_koff2, u_rate2, u_size2, u_dtcap;
+/* flow, orientation and scale — three fields laid over the frame that steer
+   the reaction rather than choose its regime. each is .x the field type
+   (0 off), and then:
+     u_flow    .y speed in texels per step, .z turn (rad), .w noise frequency
+     u_orient  .y anisotropy 0..1,          .z turn (rad), .w noise frequency
+     u_scale   .y scale at 0, .z scale at 1, .w noise frequency; u_scangle
+   vector types: 1 uniform · 2 radial · 3 circular · 4 noise · 5 the map's
+   contours. scalar types: 1 linear · 2 radial · 3 noise · 4 the map. */
+uniform vec4  u_flow, u_orient, u_scale;
+uniform float u_scangle;
 in vec2 v_uv;
 out vec4 outColor;
+
+/* positions the fields are laid out in: centred, one unit the height of the
+   grid, and isotropic in texels — so a direction here is a direction in the
+   texture too, and a field drawn round the centre is round on screen */
+vec2 fieldPos(vec2 uv) { return (uv - 0.5) * vec2(u_texel.y / u_texel.x, 1.0); }
+// integer hash, so the noise is the same on every gpu and at any offset
+float hash21(vec2 i) {
+  uvec2 q = uvec2(ivec2(i) + ivec2(32768));
+  uint h = q.x * 1597334677u ^ q.y * 3812015801u;
+  h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15; h *= 0x846ca68bu; h ^= h >> 16;
+  return float(h) * (1.0 / 4294967295.0);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1, 0)), f.x),
+             mix(hash21(i + vec2(0, 1)), hash21(i + vec2(1, 1)), f.x), f.y);
+}
+float fbm(vec2 p) { return 0.65 * vnoise(p) + 0.35 * vnoise(p * 2.13 + 17.3); }
+vec2 rot2(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
+// the map's gradient, measured across a few percent of the frame so it reads
+// the shape painted rather than the grain of a photo, in field units
+vec2 mapGrad(vec2 uv) {
+  vec2 h = vec2(0.012 * u_texel.x / u_texel.y, 0.012);
+  float gx = texture(u_map, uv + vec2(h.x, 0.0)).r - texture(u_map, uv - vec2(h.x, 0.0)).r;
+  float gy = texture(u_map, uv + vec2(0.0, h.y)).r - texture(u_map, uv - vec2(0.0, h.y)).r;
+  return vec2(gx, gy) / (2.0 * 0.012);
+}
+/* a unit direction field, and in mag how strongly it holds here: radial and
+   circular fade out over the last speck of the centre, where they have no
+   direction to give; the map's contours fade out where the map is flat */
+vec2 dirField(float type, float turn, float freq, vec2 uv, out float mag) {
+  vec2 p = fieldPos(uv), d = vec2(1.0, 0.0);
+  float r = length(p);
+  mag = 1.0;
+  if (type < 1.5) d = vec2(1.0, 0.0);
+  else if (type < 2.5) { d = p / max(r, 1e-5); mag = smoothstep(0.0, 0.06, r); }
+  else if (type < 3.5) { d = vec2(-p.y, p.x) / max(r, 1e-5); mag = smoothstep(0.0, 0.06, r); }
+  else if (type < 4.5) { float a = fbm(p * freq) * 12.566; d = vec2(cos(a), sin(a)); }
+  else {
+    vec2 g = mapGrad(uv);
+    float gn = length(g);
+    mag = smoothstep(0.02, 0.4, gn);
+    d = gn > 1e-5 ? vec2(-g.y, g.x) / gn : vec2(1.0, 0.0);   // along the contours
+  }
+  return rot2(d, turn);
+}
+// a scalar field in 0..1
+float scalarField(float type, float ang, float freq, vec2 uv) {
+  vec2 p = fieldPos(uv);
+  float asp = u_texel.y / u_texel.x;
+  if (type < 1.5) {
+    vec2 d = vec2(cos(ang), sin(ang));
+    float ext = 0.5 * (abs(d.x) * asp + abs(d.y));
+    return clamp(0.5 + 0.5 * dot(p, d) / ext, 0.0, 1.0);
+  }
+  if (type < 2.5) return clamp(length(p) / (0.5 * length(vec2(asp, 1.0))), 0.0, 1.0);
+  if (type < 3.5) return smoothstep(0.2, 0.8, fbm(p * freq));
+  return texture(u_map, uv).r;
+}
 
 // past the v edge the field continues the way the object does: across a pole
 // the surface carries on down the opposite meridian, an open rim has nothing
@@ -637,6 +748,18 @@ bool onCentre(vec2 uv, vec2 cell) {
   }
   float ix = floor(uv.x / u_texel.x), iy = floor(uv.y / u_texel.y);
   return fract((ix - o) / cell.x) < 1e-4 && fract(iy / cell.y) < 1e-4;
+}
+// the state read anywhere, not only at a texel: the field is stored
+// nearest-sampled, and a flow of a fraction of a texel per step would round
+// to standing still, so the advected read interpolates the four around it
+vec2 readSmooth(vec2 uv, vec2 cell) {
+  vec2 t = uv / u_texel - 0.5;
+  vec2 i = floor(t), f = t - i;
+  vec2 a = readState((i + vec2(0.5, 0.5)) * u_texel, cell);
+  vec2 b = readState((i + vec2(1.5, 0.5)) * u_texel, cell);
+  vec2 c = readState((i + vec2(0.5, 1.5)) * u_texel, cell);
+  vec2 d = readState((i + vec2(1.5, 1.5)) * u_texel, cell);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
 /* ---- how big a cell is ----
@@ -739,28 +862,102 @@ void main() {
     dt = min(u_dt * mix(1.0, u_rate2, m), max(u_dt, u_dtcap));
   }
 
+  /* scale. the size of a feature goes as sqrt(D / k): the diffusion length
+     against the rate of the reaction. smaller than 1 the diffusion weights
+     are damped, which the explicit scheme is always stable in; larger, the
+     weights are left alone and the reaction is slowed instead, by the square.
+     either way nothing is raised, so the timestep keeps all its headroom —
+     the price of a large region is that it grows more slowly. */
+  float rslow = 1.0;
+  if (u_scale.x > 0.5) {
+    float t = scalarField(u_scale.x, u_scangle, u_scale.w, v_uv);
+    float sc = exp(mix(log(u_scale.y), log(u_scale.z), t));
+    if (sc < 1.0) w *= sc * sc;
+    else rslow = 1.0 / (sc * sc);
+  }
+
   float wd = 0.5 * (w.x + w.y);                        // diagonal taps
   float centre = 0.4 * w.x + 0.4 * w.y + 0.2 * wd;     // keeps a flat field flat
 
+  vec2 tR  = readState(v_uv + vec2( e.x, 0.0), cell);
+  vec2 tL  = readState(v_uv + vec2(-e.x, 0.0), cell);
+  vec2 tU  = readState(v_uv + vec2(0.0,  e.y), cell);
+  vec2 tD  = readState(v_uv + vec2(0.0, -e.y), cell);
+  vec2 tRU = readState(v_uv + vec2( e.x,  e.y), cell);
+  vec2 tLU = readState(v_uv + vec2(-e.x,  e.y), cell);
+  vec2 tRD = readState(v_uv + vec2( e.x, -e.y), cell);
+  vec2 tLD = readState(v_uv + vec2(-e.x, -e.y), cell);
+
   // laplacian with directional (anisotropic) bias on the axial taps
   vec2 lap = -centre * c;
-  lap += 0.20 * w.x * (1.0 + u_biasX) * readState(v_uv + vec2( e.x, 0.0), cell);
-  lap += 0.20 * w.x * (1.0 - u_biasX) * readState(v_uv + vec2(-e.x, 0.0), cell);
-  lap += 0.20 * w.y * (1.0 + u_biasY) * readState(v_uv + vec2(0.0,  e.y), cell);
-  lap += 0.20 * w.y * (1.0 - u_biasY) * readState(v_uv + vec2(0.0, -e.y), cell);
-  lap += 0.05 * wd * readState(v_uv + vec2( e.x,  e.y), cell);
-  lap += 0.05 * wd * readState(v_uv + vec2(-e.x,  e.y), cell);
-  lap += 0.05 * wd * readState(v_uv + vec2( e.x, -e.y), cell);
-  lap += 0.05 * wd * readState(v_uv + vec2(-e.x, -e.y), cell);
+  lap += 0.20 * w.x * ((1.0 + u_biasX) * tR + (1.0 - u_biasX) * tL);
+  lap += 0.20 * w.y * ((1.0 + u_biasY) * tU + (1.0 - u_biasY) * tD);
+  lap += 0.05 * wd * (tRU + tLU + tRD + tLD);
 
-  float A = c.r, B = c.g;
+  /* orientation. the diffusion is turned into a tensor, D = I - a n n^T, with
+     n across the field direction: full strength along it, cut by a across it.
+     the cut shortens the pattern's wavelength across the field and leaves it
+     long along it, so stripes and chains of spots line up with the field.
+     taking diffusion away rather than adding it keeps every eigenvalue at or
+     under the isotropic one, so the timestep cap still holds. the 0.3 is what
+     the 9-point stencil above is of the true laplacian, so the two agree. */
+  if (u_orient.x > 0.5) {
+    float mag;
+    vec2 t = dirField(u_orient.x, u_orient.z, u_orient.w, v_uv, mag);
+    vec2 n = vec2(-t.y, t.x);
+    float a = u_orient.y * mag;
+    vec2 uxx = tR + tL - 2.0 * c, uyy = tU + tD - 2.0 * c;
+    vec2 uxy = 0.25 * (tRU - tLU - tRD + tLD);
+    lap -= 0.3 * a * (n.x * n.x * w.x * uxx + n.y * n.y * w.y * uyy
+                      + 2.0 * n.x * n.y * sqrt(w.x * w.y) * uxy);
+  }
+
+  /* flow. the field is carried along a velocity, semi-lagrangian: this texel
+     takes the state from where the flow brings it from, a fraction of a texel
+     upstream, and the reaction then runs on what arrived. the diffusion is
+     the local one, which at these speeds is the same thing to well under a
+     texel.
+     a bilinear read a fraction a of a texel upstream is the true shifted
+     value plus a(1-a)/2 of the second derivative on each axis: a numerical
+     diffusion, and the same for both chemicals. that pulls their diffusion
+     rates together, and gray-scott needs them apart — at a few tenths of a
+     texel per step it is enough to flood the frame. so it is taken back out
+     with the centred second differences the stencil has already read, which
+     leaves the scheme second order (lax-wendroff, in one dimension). on a
+     coarse cell the read is the smooth reconstruction instead, whose error
+     is not this one, so it is left alone there. */
+  vec2 base = c;
+  if (u_flow.x > 0.5) {
+    float mag;
+    vec2 d;
+    if (u_flow.x > 3.5 && u_flow.x < 4.5) {
+      // turbulence is the curl of the noise, not a noise of angles: a field of
+      // angles has sources and sinks, and a sink swallows the pattern whole.
+      // the curl is divergence-free, so it stirs without piling up.
+      vec2 p = fieldPos(v_uv) * u_flow.w, h = vec2(0.02, 0.0);
+      vec2 g = vec2(fbm(p + h.xy) - fbm(p - h.xy), fbm(p + h.yx) - fbm(p - h.yx)) / (2.0 * h.x);
+      d = rot2(vec2(g.y, -g.x) / 1.2, u_flow.z);
+      float dl = length(d);
+      if (dl > 1.0) d /= dl;
+      mag = 1.0;
+    } else d = dirField(u_flow.x, u_flow.z, u_flow.w, v_uv, mag);
+    vec2 off = d * (mag * clamp(u_flow.y, -0.95, 0.95));     // texels
+    base = readSmooth(v_uv - off * u_texel, cell);
+    if (cell.x < 1.0001 && cell.y < 1.0001) {
+      vec2 a = abs(off);
+      base -= 0.5 * a.x * (1.0 - a.x) * (tR + tL - 2.0 * c)
+            + 0.5 * a.y * (1.0 - a.y) * (tU + tD - 2.0 * c);
+    }
+  }
+
+  float A = base.r, B = base.g;
   float reaction = A * B * B;
   // boost raises the diffusion and takes the same factor back out of the
   // timestep, so the diffusive part of the update — and its stability — is
   // exactly what it was, and only the reaction integrates more slowly
-  vec2 next = c + vec2(
-    u_dA * boost * lap.r - reaction + feed * (1.0 - A),
-    u_dB * boost * lap.g + reaction - (kill + feed) * B
+  vec2 next = base + vec2(
+    u_dA * boost * lap.r + rslow * (-reaction + feed * (1.0 - A)),
+    u_dB * boost * lap.g + rslow * ( reaction - (kill + feed) * B)
   ) * (dt / boost);
   outColor = vec4(clamp(next, 0.0, 1.0), 0.0, 1.0);
 }`;
@@ -1482,6 +1679,28 @@ const MAP_PARAMS = [
   { id: 'map_size',  label: 'map feature size',min: 0.45,  max: 1.00,  step: 0.01,   value: 1.00,   dp: 2 },
   { id: 'map_level', label: 'paint value',     min: 0.00,  max: 1.00,  step: 0.01,   value: 1.00,   dp: 2 },
   { id: 'map_soft',  label: 'paint softness',  min: 0.00,  max: 1.00,  step: 0.01,   value: 0.60,   dp: 2 },
+  { id: 'map_angle', label: 'gradient angle',  min: -180,  max: 180,   step: 1,      value: 0,      dp: 0,
+    fmt: v => Math.round(v) + '°' },
+  { id: 'map_nscale',label: 'noise scale',     min: 0.5,   max: 12.0,  step: 0.1,    value: 3.0,    dp: 1 },
+];
+/* flow, orientation and scale: three fields over the frame that steer the
+   reaction. the type of each is a select (FX below); these are its knobs. */
+const deg = v => Math.round(v) + '°';
+const FLOW_PARAMS = [
+  { id: 'fl_speed', label: 'flow speed',   min: -0.40, max: 0.40, step: 0.005, value: 0.08, dp: 3 },
+  { id: 'fl_turn',  label: 'flow turn',    min: -180,  max: 180,  step: 1,     value: 0,    dp: 0, fmt: deg },
+  { id: 'fl_freq',  label: 'noise scale',  min: 0.5,   max: 12.0, step: 0.1,   value: 3.0,  dp: 1 },
+];
+const ORIENT_PARAMS = [
+  { id: 'or_amount', label: 'anisotropy',  min: 0.00, max: 0.95, step: 0.01, value: 0.70, dp: 2 },
+  { id: 'or_turn',   label: 'orient turn', min: -180, max: 180,  step: 1,    value: 0,    dp: 0, fmt: deg },
+  { id: 'or_freq',   label: 'noise scale', min: 0.5,  max: 12.0, step: 0.1,  value: 3.0,  dp: 1 },
+];
+const SCALE_PARAMS = [
+  { id: 'sc_lo',    label: 'scale at black', min: 0.40, max: 3.00, step: 0.01, value: 0.60, dp: 2 },
+  { id: 'sc_hi',    label: 'scale at white', min: 0.40, max: 3.00, step: 0.01, value: 1.80, dp: 2 },
+  { id: 'sc_angle', label: 'gradient angle', min: -180, max: 180,  step: 1,    value: 0,    dp: 0, fmt: deg },
+  { id: 'sc_freq',  label: 'noise scale',    min: 0.5,  max: 12.0, step: 0.1,  value: 3.0,  dp: 1 },
 ];
 const DRAW_PARAMS = [
   { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0 },
@@ -1543,7 +1762,7 @@ const MODEL_PARAMS = {
   ],
 };
 const paramById = {};
-[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, MAP_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
+[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, MAP_PARAMS, FLOW_PARAMS, ORIENT_PARAMS, SCALE_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
   list.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; }));
 
 function buildParamRows(list, container, clear) {
@@ -2070,6 +2289,8 @@ function selectModel(name) {
   document.getElementById('preset').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('sec-draw').style.display = (name === 'reaction' && !project.on) ? '' : 'none';
   document.getElementById('sec-map').style.display = name === 'reaction' ? '' : 'none';
+  for (const id of ['sec-flow', 'sec-orient', 'sec-scale'])
+    document.getElementById(id).style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('row-reaction').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('row-generative').style.display = name === 'reaction' ? 'none' : '';
   document.getElementById('model-note').textContent = m.note || '';
@@ -2981,12 +3202,44 @@ function mapShape(tool, a, b, r, fill, erase) {
 
 function mapGradient(radial) {
   const w = mapCanvas.width, h = mapCanvas.height;
+  // the linear gradient runs black to white along the angle (0° is left to
+  // right, counter-clockwise up the frame), spanning the frame's extent that way
+  const a = P.map_angle * Math.PI / 180, dx = Math.cos(a), dy = -Math.sin(a);
+  const ext = 0.5 * (Math.abs(dx) * w + Math.abs(dy) * h);
   const g = radial
     ? mctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.hypot(w, h) / 2)
-    : mctx.createLinearGradient(0, 0, w, 0);
+    : mctx.createLinearGradient(w / 2 - dx * ext, h / 2 - dy * ext, w / 2 + dx * ext, h / 2 + dy * ext);
   g.addColorStop(0, radial ? '#fff' : '#000');
   g.addColorStop(1, radial ? '#000' : '#fff');
   mctx.fillStyle = g; mctx.fillRect(0, 0, w, h);
+  mapTouched();
+}
+/* soft blobs of map: smooth value noise, a lattice of random greys eased
+   between, at a pitch set by noise scale (cells across the frame height),
+   stretched to the full range */
+function mapNoise() {
+  const w = mapCanvas.width, h = mapCanvas.height;
+  const f = P.map_nscale, gw = Math.ceil(f * w / h) + 2, gh = Math.ceil(f) + 2;
+  const lat = (n => { const a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = Math.random(); return a; })(gw * gh);
+  const L = (x, y) => lat[y * gw + x];
+  const ease = t => t * t * (3 - 2 * t);
+  const id = mctx.createImageData(w, h), d = id.data;
+  const v = new Float32Array(w * h);
+  let lo = 1, hi = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const px = x / h * f, py = y / h * f;
+    const ix = Math.floor(px), iy = Math.floor(py), fx = ease(px - ix), fy = ease(py - iy);
+    const a = L(ix, iy) + (L(ix + 1, iy) - L(ix, iy)) * fx;
+    const b = L(ix, iy + 1) + (L(ix + 1, iy + 1) - L(ix, iy + 1)) * fx;
+    const t = a + (b - a) * fy;
+    v[y * w + x] = t; lo = Math.min(lo, t); hi = Math.max(hi, t);
+  }
+  const span = Math.max(1e-3, hi - lo);
+  for (let i = 0; i < w * h; i++) {
+    const g = Math.round((v[i] - lo) / span * 255);
+    d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = g; d[i * 4 + 3] = 255;
+  }
+  mctx.putImageData(id, 0, 0);
   mapTouched();
 }
 function mapInvert() {
@@ -3043,6 +3296,37 @@ function loadMapData(src) {
   img.src = src;
 }
 
+/* ================================================================
+   flow, orientation and scale — the type of each field. 0 is off; the
+   numbers are what the sim shader switches on.
+   ================================================================ */
+const FX = { flow: 0, orient: 0, scale: 0 };
+const FX_TYPES = {
+  flow:   [['off', 0], ['uniform', 1], ['radial', 2], ['circular', 3], ['turbulent', 4], ['along map contours', 5]],
+  orient: [['off', 0], ['uniform', 1], ['radial', 2], ['circular', 3], ['noise', 4], ['along map contours', 5]],
+  scale:  [['off', 0], ['linear gradient', 1], ['radial', 2], ['noise', 3], ['pattern map', 4]],
+};
+function setFx(kind, v) {
+  v = Math.round(v);
+  if (!FX_TYPES[kind].some(t => t[1] === v)) v = 0;
+  FX[kind] = v;
+  const sel = document.getElementById('fx-' + kind);
+  if (sel) sel.value = String(v);
+  const body = document.getElementById('params-' + kind);
+  if (body) body.style.display = v ? '' : 'none';
+  const tag = document.getElementById(kind + '-tag');
+  if (tag) tag.textContent = v ? FX_TYPES[kind].find(t => t[1] === v)[0] : '';
+}
+for (const kind of Object.keys(FX)) {
+  const sel = document.getElementById('fx-' + kind);
+  for (const [label, v] of FX_TYPES[kind]) {
+    const o = document.createElement('option');
+    o.value = String(v); o.textContent = label;
+    sel.appendChild(o);
+  }
+  sel.addEventListener('change', () => setFx(kind, parseInt(sel.value, 10)));
+}
+
 document.querySelectorAll('#targets .tool').forEach(btn => {
   btn.addEventListener('click', () => selectTarget(btn.dataset.target));
 });
@@ -3054,6 +3338,7 @@ document.getElementById('btn-mapon').addEventListener('click', () => setMapOn(!m
 document.getElementById('btn-mapshow').addEventListener('click', () => setMapShow(!map.show));
 document.getElementById('btn-mapgrad').addEventListener('click', () => mapGradient(false));
 document.getElementById('btn-mapradial').addEventListener('click', () => mapGradient(true));
+document.getElementById('btn-mapnoise').addEventListener('click', mapNoise);
 document.getElementById('btn-mapinvert').addEventListener('click', mapInvert);
 document.getElementById('btn-mapclear').addEventListener('click', mapClear);
 document.getElementById('btn-mapimage').addEventListener('click', () => document.getElementById('mapfile').click());
@@ -3390,6 +3675,7 @@ function collectConfig() {
     projection: { on: project.on, surface: project.surface, shape: project.shape, mode: project.mode },
     view: { yaw: orbit.yaw, pitch: orbit.pitch, dist: orbit.dist },
     map: { on: map.on, image: map.used ? mapCanvas.toDataURL('image/png') : null },
+    fields: Object.assign({}, FX),
   };
 }
 
@@ -3463,6 +3749,9 @@ function applyConfig(cfg) {
     if (typeof mp.image === 'string' && mp.image.startsWith('data:image/')) loadMapData(mp.image);
     setMapOn(!!mp.on);
   }
+  // flow, orientation and scale are off in a file saved before they existed
+  const fx = (cfg.fields && typeof cfg.fields === 'object') ? cfg.fields : {};
+  for (const kind of Object.keys(FX)) setFx(kind, isFinite(fx[kind]) ? fx[kind] : 0);
   markPresetCustom();
   updateModelTag();
 }
@@ -3541,6 +3830,11 @@ function step() {
   gl.uniform1f(simProg.u.u_rate2, P.map_rate);
   gl.uniform1f(simProg.u.u_size2, P.map_size);
   gl.uniform1f(simProg.u.u_dtcap, 1.15 / Math.max(P.dA, P.dB));
+  const rad = Math.PI / 180;
+  gl.uniform4f(simProg.u.u_flow, FX.flow, P.fl_speed, P.fl_turn * rad, P.fl_freq);
+  gl.uniform4f(simProg.u.u_orient, FX.orient, P.or_amount, P.or_turn * rad, P.or_freq);
+  gl.uniform4f(simProg.u.u_scale, FX.scale, P.sc_lo, P.sc_hi, P.sc_freq);
+  gl.uniform1f(simProg.u.u_scangle, P.sc_angle * rad);
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, mapTex);
   gl.uniform1i(simProg.u.u_map, 3);
@@ -3712,6 +4006,10 @@ buildParamRows(LIQUID_PARAMS, document.getElementById('params-liquid'), false);
 buildParamRows(RENDER_PARAMS, document.getElementById('params-render'), false);
 buildParamRows(DRAW_PARAMS, document.getElementById('params-brush'), false);
 buildParamRows(MAP_PARAMS, document.getElementById('params-map'), false);
+buildParamRows(FLOW_PARAMS, document.getElementById('params-flow'), false);
+buildParamRows(ORIENT_PARAMS, document.getElementById('params-orient'), false);
+buildParamRows(SCALE_PARAMS, document.getElementById('params-scale'), false);
+for (const kind of Object.keys(FX)) setFx(kind, 0);
 buildParamRows(PROJECT_PARAMS, document.getElementById('params-project'), false);
 buildPresets();
 buildPaletteUI();
