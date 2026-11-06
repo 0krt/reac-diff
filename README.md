@@ -158,7 +158,7 @@ Both work on the pattern rather than on the surface it sits on:
   where the pattern is thick. **Pulse rate** and **pulse waves** set its speed
   and wavelength.
 
-## Parameter map
+## Pattern map
 
 A greyscale map laid over the field that the reaction reads every step, so
 different areas grow different patterns at different rates. Black runs the
@@ -180,9 +180,50 @@ reaction on the main sliders; white runs it on the map's own **feed**, **kill**,
   with dark areas taking the map regime, contrast stretched to the full range.
   With the default regimes (coral worms on the main sliders, mitosis spots on
   the map) a portrait comes out as worms in the light and spots in the shadow.
-  **Gradient**, **radial**, **invert** and **clear** fill the map directly.
+  **Gradient** (along the **gradient angle**), **radial**, **noise** (soft
+  blobs at the **noise scale**), **invert** and **clear** fill the map directly.
+- The map also feeds the fields below: scale can read it as its size map, and
+  flow and orientation can follow its contours.
 - Painting or importing switches the map on. The map is saved in the preset
   JSON as a PNG.
+
+## Flow, orientation and scale
+
+Three fields laid over the frame that steer the reaction-diffusion pattern
+rather than pick its regime. Each has a type — off, a procedural field, or the
+pattern map — and its own knobs. Vector fields (flow, orientation) come as
+**uniform**, **radial**, **circular**, **noise** and **along map contours**,
+and a **turn** rotates the whole field: radial turned 45° is a spiral, 90° is
+circular; map contours turned 90° run down the map's slopes.
+
+- **Flow** — the chemicals are advected along the field while they react, so
+  the pattern streams, spirals or swirls. Semi-Lagrangian: each texel takes
+  its state from a fraction of a texel upstream, read bilinearly (the field is
+  stored nearest-sampled, and a sub-texel flow would otherwise round to
+  standing still), and the reaction runs on what arrived. Speed is in texels
+  per step; negative runs it backwards. The bilinear read adds a numerical
+  diffusion of `a(1−a)/2` per axis to both chemicals alike, which pulls their
+  rates together and floods the frame at a few tenths of a texel per step, so
+  it is subtracted back out with the stencil's own second differences
+  (Lax–Wendroff in 1-D). Turbulent flow is the curl of a noise field —
+  divergence-free, so it stirs without sinks swallowing the pattern.
+- **Orientation** — diffusion becomes a tensor, `D = I − a·n nᵀ`, with `n`
+  across the field direction: full strength along it, cut by the
+  **anisotropy** `a` across it. The pattern's wavelength shortens across the
+  field and stays long along it, so stripes and chains of spots line up with
+  the field — concentric rings for circular, a sunburst for radial. Diffusion
+  is only ever taken away, so every eigenvalue stays at or under the
+  isotropic one and the timestep cap still holds. The mixed derivative uses
+  the four diagonal taps the 9-point stencil already reads.
+- **Scale** — the pattern's size varies over the frame between **scale at
+  black** and **scale at white** of a linear gradient (with an angle), a
+  radial field (black at the centre), noise, or the pattern map, blended in
+  log space. Feature size goes as `√(D/k)`: under 1 the diffusion weights are
+  damped (always stable); over 1 the weights are left alone and the reaction
+  is slowed by the square instead, so nothing is raised past the stability
+  limit — large regions grow more slowly.
+
+All three are saved in the preset JSON and default to off.
 
 ## Features
 
