@@ -4,7 +4,7 @@
     --focus: var(--accent);
 
     --bg: #0a0b0e;
-    --panel: rgba(16, 18, 23, 0.88);
+    --panel: rgba(16, 18, 23, 0.93);
     --line: rgba(255, 255, 255, 0.08);
     --line-strong: rgba(255, 255, 255, 0.16);
     --ink: #d6dae2;
@@ -16,10 +16,12 @@
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; overflow: hidden; background: var(--bg); }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); overscroll-behavior: none; }
   body { font-family: var(--mono); color: var(--ink); font-size: 12px; }
 
-  #canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+  /* the canvas takes every touch itself: drawing, orbiting and pinching, with
+     no page scroll or browser zoom fighting it */
+  #canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
   #overlay { position: fixed; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; z-index: 3; }
 
   /* ---------- header ---------- */
@@ -60,7 +62,10 @@
   /* ---------- panel ---------- */
   #panel {
     position: fixed; top: 0; right: 0; bottom: 0; width: 292px; z-index: 10;
-    background: var(--panel); backdrop-filter: blur(14px);
+    /* no backdrop blur: the canvas under it redraws every frame, so a blur
+       would be recomputed every frame over the whole panel for a background
+       that is all but opaque anyway */
+    background: var(--panel);
     border-left: 1px solid var(--line);
     overflow-y: auto; overscroll-behavior: contain;
     transition: transform 0.25s ease;
@@ -137,7 +142,7 @@
   .pin-dock {
     position: fixed; left: 22px; right: 330px; bottom: 40px; z-index: 6;
     display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px;
-    padding: 9px 12px; background: var(--panel); backdrop-filter: blur(10px);
+    padding: 9px 12px; background: var(--panel);
     border: 1px solid var(--line-strong); border-radius: 4px; font-size: 10px; transition: right 0.25s ease;
   }
   body.panel-hidden .pin-dock { right: 22px; }
@@ -252,7 +257,8 @@
   }
   #pmap { width: 100%; height: 100%; display: block; image-rendering: auto; }
   .pm-ring {
-    position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+    position: absolute; left: 0; top: 0; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+    will-change: transform;
     border: 2px solid var(--accent); box-shadow: 0 0 0 1px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(0,0,0,0.7);
     pointer-events: none;
   }
@@ -289,6 +295,78 @@
   #err {
     position: fixed; inset: 0; display: none; z-index: 100;
     background: var(--bg); color: var(--ink); padding: 40px; font-size: 13px; line-height: 2;
+  }
+
+  /* ==================================================================
+     small screens and touch
+     ------------------------------------------------------------------
+     under 720px wide the panel is a sheet over the bottom of the screen
+     instead of a column down the side, so the field stays visible above
+     it. a coarse pointer gets finger-sized thumbs and buttons.
+     ================================================================== */
+  :root { --sheet-h: 58vh; --sheet-h: 58dvh; }
+  @media (max-width: 720px) {
+    #header { padding: calc(12px + env(safe-area-inset-top)) 16px 12px calc(16px + env(safe-area-inset-left)); max-width: calc(100% - 110px); }
+    #header h1 { font-size: 11px; letter-spacing: 0.2em; }
+    #header .sub { font-size: 9px; letter-spacing: 0.16em; }
+    #status {
+      right: 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); font-size: 9px; letter-spacing: 0.08em;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #panel {
+      top: auto; left: 0; right: 0; bottom: 0; width: auto; height: var(--sheet-h);
+      border-left: 0; border-top: 1px solid var(--line-strong); border-radius: 12px 12px 0 0;
+      padding-bottom: env(safe-area-inset-bottom);
+      box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+    }
+    #panel.hidden { transform: translateY(calc(100% + 1px)); }
+    #panel { background: rgba(16, 18, 23, 0.97); }
+    /* the sheet covers the status line; it would only show through as noise */
+    body:not(.panel-hidden) #status { visibility: hidden; }
+    #paneltoggle, body.panel-hidden #paneltoggle { top: calc(10px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); padding: 9px 13px; font-size: 13px; }
+    #findtoggle, body.panel-hidden #findtoggle { top: calc(10px + env(safe-area-inset-top)); right: calc(64px + env(safe-area-inset-right)); padding: 9px 12px; font-size: 13px; }
+    #findtoggle kbd { display: none; }
+    .pin-dock {
+      left: 12px; right: 12px; bottom: calc(var(--sheet-h) + 10px);
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); transition: bottom 0.25s ease;
+    }
+    body.panel-hidden .pin-dock { right: 12px; bottom: calc(36px + env(safe-area-inset-bottom)); }
+    .section { padding: 14px 16px 16px; }
+    .section.collapsed { padding-bottom: 14px; }
+    /* a square map the full width of the sheet would fill all of it */
+    #pm-wrap, .pm-read { max-width: min(100%, 300px, 30dvh); margin-left: auto; margin-right: auto; }
+    .param-search { padding: calc(10px + env(safe-area-inset-top)) 10px 10px; }
+    .ps-box { max-height: 70dvh; }
+    /* web midi is not on phones; the learn buttons only take width */
+    .midibtn { display: none; }
+    #recbadge { top: calc(56px + env(safe-area-inset-top)); }
+  }
+  /* a phone on its side: the side panel stays, but the map must not fill it */
+  @media (max-height: 500px) and (min-width: 721px) {
+    #pm-wrap, .pm-read { max-width: 200px; margin-left: auto; margin-right: auto; }
+  }
+  @media (pointer: coarse) {
+    input[type="range"] { height: 34px; min-height: 34px; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 3px; }
+    input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9.5px; }
+    input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; }
+    .param { margin-bottom: 8px; }
+    .param label, .param .val { font-size: 11px; }
+    .param .val { padding: 4px 0 4px 10px; }
+    button.act { padding: 11px 10px; }
+    button.tool { padding: 11px 4px; }
+    button.vary { height: 40px; }
+    .vary-row { gap: 7px; }
+    select { padding: 10px 8px; }
+    /* ios zooms the page into any field under 16px when it takes focus */
+    select, .ps-q input, .val-edit { font-size: 16px; }
+    .pin-btn { font-size: 17px; padding: 6px 8px; }
+    .dk-x { opacity: 1; font-size: 14px; padding: 4px 6px; }
+    .section h2 { padding: 6px 0; margin-bottom: 8px; }
+    .section.collapsed > h2 { margin-bottom: 0; }
+    .ps-foot { display: none; }
+    .ps-row { padding: 11px 13px; }
+    .pm-ring { width: 26px; height: 26px; margin: -13px 0 0 -13px; }
   }
 
   /* ==================================================================
@@ -698,7 +776,10 @@
 const canvas  = document.getElementById('canvas');
 const overlay = document.getElementById('overlay');
 const octx    = overlay.getContext('2d');
-const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
+// the drawing buffer is not preserved: every frame redraws all of it, and png
+// export draws a frame right before it reads one. keeping it costs a copy (or
+// on a tiled mobile gpu, a full reload) of the frame every frame.
+const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: false, antialias: false });
 
 function fatal(msg) {
   const el = document.getElementById('err');
@@ -762,32 +843,19 @@ vec3 domainAt(vec2 uv, vec2 aspect, float scale) {
   return vec3(uv * aspect * scale, 0.0);
 }`;
 
-/* ---- generative models: each writes a scalar field into .g ---- */
-const SIM_FRAG = `#version 300 es
-precision highp float;
-${SURFACE}
-uniform sampler2D u_state;
-uniform vec2  u_texel;
-uniform float u_dA, u_dB, u_feed, u_kill, u_dt, u_biasX, u_biasY;
-uniform float u_cellsize;   // how large one cell of the reaction is asked to be
-uniform float u_vmode;   // 0 the field wraps in v · 1 poles at both ends · 2 open rims
-/* the parameter map. .r is how far this texel sits toward the second regime:
-   0 runs on the main sliders, 1 on the map's own feed, kill offset, speed and
-   feature size, and anything between is the blend. kill is not blended
-   directly — the live band follows a curve, and the straight line between two
-   points on it dips out of the band — so the offset from k_c is blended and
-   the curve is evaluated at the blended feed. */
-uniform sampler2D u_map;
-uniform float u_mapon, u_feed2, u_koff, u_koff2, u_rate2, u_size2, u_dtcap;
-/* flow, orientation and scale — fields over the frame that steer the reaction
-   rather than choose its regime. every term is a signed amount, zero is off,
-   and the terms add, so they combine:
+/* the steering fields, baked. one pass per target: part 0 writes the flow and
+   the orientation, part 1 the scale. every term is a signed amount, zero is
+   off, and the terms add, so they combine:
      u_fl1  radial · rotate · swirl · bubble      u_fl2  ring · vortex · vertical
      u_or1  radial · circles · swirl · bubble     u_or2  linear
      u_sc   radial · random · ring · map */
+const STEER_FRAG = `#version 300 es
+precision highp float;
+uniform vec2  u_texel;
+uniform sampler2D u_map;
 uniform vec4  u_fl1, u_or1, u_sc;
 uniform vec3  u_fl2;
-uniform float u_or2;
+uniform float u_or2, u_part;
 in vec2 v_uv;
 out vec4 outColor;
 
@@ -809,7 +877,6 @@ float vnoise(vec2 p) {
              mix(hash21(i + vec2(0, 1)), hash21(i + vec2(1, 1)), f.x), f.y);
 }
 float fbm(vec2 p) { return 0.65 * vnoise(p) + 0.35 * vnoise(p * 2.13 + 17.3); }
-vec2 rot2(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
 /* convection rolls: the curl of sin x sin y, three across the height of the
    frame, alternate cells turning opposite ways. unit speed at its fastest. */
 vec2 bubble(vec2 p) {
@@ -863,6 +930,40 @@ float scaleAt(vec2 uv) {
            + u_sc.w * 1.6 * (2.0 * texture(u_map, uv).r - 1.0);
   return clamp(exp2(ls), 0.3, 3.5);
 }
+void main() {
+  outColor = u_part < 0.5 ? vec4(flowAt(v_uv), orientAt(v_uv)) : vec4(scaleAt(v_uv), 0.0, 0.0, 1.0);
+}`;
+
+/* ---- generative models: each writes a scalar field into .g ---- */
+const SIM_FRAG = `#version 300 es
+precision highp float;
+${SURFACE}
+uniform sampler2D u_state;
+uniform vec2  u_texel;
+uniform float u_dA, u_dB, u_feed, u_kill, u_dt, u_biasX, u_biasY;
+uniform float u_cellsize;   // how large one cell of the reaction is asked to be
+uniform float u_vmode;   // 0 the field wraps in v · 1 poles at both ends · 2 open rims
+/* the parameter map. .r is how far this texel sits toward the second regime:
+   0 runs on the main sliders, 1 on the map's own feed, kill offset, speed and
+   feature size, and anything between is the blend. kill is not blended
+   directly — the live band follows a curve, and the straight line between two
+   points on it dips out of the band — so the offset from k_c is blended and
+   the curve is evaluated at the blended feed. */
+uniform sampler2D u_map;
+uniform float u_mapon, u_feed2, u_koff, u_koff2, u_rate2, u_size2, u_dtcap;
+/* flow, orientation and scale — fields over the frame that steer the reaction
+   rather than choose its regime. they depend only on where a texel sits and
+   on their sliders, so they are baked into two textures (STEER_FRAG) when a
+   slider moves, instead of being worked out again by every texel on every
+   step — trig, hashed noise and an exp2 per texel per step, for a value that
+   has not changed.
+     u_steer   .xy the flow, texels per step · .zw the orientation vector
+     u_steer2  .x  the local scale, as a multiple of the cell size
+   u_steeron is which of flow · orientation · scale are on. */
+uniform sampler2D u_steer, u_steer2;
+uniform vec3 u_steeron;
+in vec2 v_uv;
+out vec4 outColor;
 
 // past the v edge the field continues the way the object does: across a pole
 // the surface carries on down the opposite meridian, an open rim has nothing
@@ -1051,8 +1152,8 @@ void main() {
      either way nothing is raised, so the timestep keeps all its headroom —
      the price of a large region is that it grows more slowly. */
   float rslow = 1.0;
-  if (dot(abs(u_sc), vec4(1.0)) > 0.0) {
-    float sc = scaleAt(v_uv);
+  if (u_steeron.z > 0.5) {
+    float sc = texture(u_steer2, v_uv).r;
     if (sc < 1.0) w *= sc * sc;
     else rslow = 1.0 / (sc * sc);
   }
@@ -1082,7 +1183,8 @@ void main() {
      taking diffusion away rather than adding it keeps every eigenvalue at or
      under the isotropic one, so the timestep cap still holds. the 0.3 is what
      the 9-point stencil above is of the true laplacian, so the two agree. */
-  vec2 od = orientAt(v_uv);
+  vec4 st = u_steeron.x + u_steeron.y > 0.5 ? texture(u_steer, v_uv) : vec4(0.0);
+  vec2 od = st.zw;
   float ol = length(od);
   if (ol > 1e-4) {
     vec2 t = od / ol;
@@ -1109,13 +1211,20 @@ void main() {
      coarse cell the read is the smooth reconstruction instead, whose error
      is not this one, so it is left alone there. */
   vec2 base = c;
-  if (dot(abs(u_fl1), vec4(1.0)) + dot(abs(u_fl2), vec3(1.0)) > 0.0) {
-    vec2 off = flowAt(v_uv);                       // texels
-    base = readSmooth(v_uv - off * u_texel, cell);
+  if (u_steeron.x > 0.5) {
+    vec2 off = st.xy;                              // texels
     if (cell.x < 1.0001 && cell.y < 1.0001) {
+      // the flow is held under a texel a step, so the four texels around the
+      // upstream point are among the nine the stencil has already read: the
+      // bilinear read costs no fetches of its own
       vec2 a = abs(off);
+      vec2 sx = off.x > 0.0 ? tL : tR, sy = off.y > 0.0 ? tD : tU;
+      vec2 sxy = off.x > 0.0 ? (off.y > 0.0 ? tLD : tLU) : (off.y > 0.0 ? tRD : tRU);
+      base = mix(mix(c, sx, a.x), mix(sy, sxy, a.x), a.y);
       base -= 0.5 * a.x * (1.0 - a.x) * (tR + tL - 2.0 * c)
             + 0.5 * a.y * (1.0 - a.y) * (tU + tD - 2.0 * c);
+    } else {
+      base = readSmooth(v_uv - off * u_texel, cell);
     }
   }
 
@@ -1723,6 +1832,7 @@ function program(frag, vert) {
 }
 
 const simProg      = program(SIM_FRAG);
+const steerProg    = program(STEER_FRAG);
 const seedProg     = program(SEED_FRAG);
 const copyProg     = program(COPY_FRAG);
 const stampProg    = program(STAMP_FRAG);
@@ -1745,6 +1855,10 @@ gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 /* ---------------- sim targets (ping-pong) ---------------- */
 let simW = 0, simH = 0, fields = null, cur = 0, genField = null;
 const genInternalFormat = (stateType === gl.FLOAT) ? gl.RGBA32F : gl.RGBA16F;
+/* the baked flow / orientation and scale fields (STEER_FRAG), the size of the
+   field. dirty when one of their sliders moves, the grid is reallocated, or
+   the vary map changes while scale reads it. */
+const steer = { tex: [null, null], dirty: true };
 
 function makeTex(w, h, internal, wrap) {
   const tex = gl.createTexture();
@@ -1783,6 +1897,9 @@ function allocSim(preserve) {
   fields = [makeField(w, h), makeField(w, h)];
   if (genField) { gl.deleteTexture(genField.tex); gl.deleteFramebuffer(genField.fbo); }
   genField = makeTex(w, h, genInternalFormat, gl.REPEAT);
+  for (const t of steer.tex) if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+  steer.tex = [makeTex(w, h, genInternalFormat, gl.REPEAT), makeTex(w, h, genInternalFormat, gl.REPEAT)];
+  steer.dirty = true;
   cur = 0;
   gl.bindVertexArray(vao);
   gl.viewport(0, 0, simW, simH);
@@ -1929,6 +2046,8 @@ const MODEL_PARAMS = {
   ],
 };
 const paramById = {};
+// the sliders the baked steering fields are made from
+const STEER_IDS = new Set([...FLOW_PARAMS, ...ORIENT_PARAMS, ...SCALE_PARAMS].map(d => d.id).filter(id => id !== 'cellsize' && id !== 'speed'));
 [RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, MAP_PARAMS, FLOW_PARAMS, ORIENT_PARAMS, SCALE_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
   list.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; }));
 
@@ -1980,6 +2099,7 @@ function setParam(id, value, updateSlider = true) {
   // tiling shrinks the pattern on the object, so the mesh has to follow it
   if (id === 'pr_tile' && !project.surface) scheduleRebuild();
   if (id === 'pr_dist') orbit.dist = value;
+  if (STEER_IDS.has(id)) steer.dirty = true;
   if (!retuning) {
     if (id === 'kill') { kOffset = P.kill - kCrit(P.feed); updateBandNote(); }
     if (id === 'feed' || id === 'dA' || id === 'dB') retuneRanges();
@@ -2231,30 +2351,35 @@ const pmProg = program(PMAP_FRAG), pmShowProg = program(PMAP_SHOW_FRAG);
 var pm = {
   fields: [makeTex(PM_N, PM_N, stateInternalFormat, gl.CLAMP_TO_EDGE), makeTex(PM_N, PM_N, stateInternalFormat, gl.CLAMP_TO_EDGE)],
   show: makeTex(PM_N, PM_N, gl.RGBA8, gl.CLAMP_TO_EDGE),
-  cur: 0, done: 0, frame: 0,
+  cur: 0, done: 0, frame: 0, lastT: 0,
   c1: pmXY(P.feed, P.kill), t1: null, c2: pmXY(P.map_feed, kCrit(P.map_feed) + P.map_koff), t2: null,
   vary: null, drag: 0, applying: false,
 };
 pm.t1 = pm.c1.slice(); pm.t2 = pm.c2.slice();
 const pmCtx = document.getElementById('pmap').getContext('2d');
 const pmPixels = new Uint8Array(PM_N * PM_N * 4);
-function pmPass(prog, dst, seed) {
+const PM_BAND = new Float32Array(K_BAND.flat());
+// set a map program up once; a run of passes then only swaps the textures
+function pmUse(prog, seed) {
   gl.bindVertexArray(vao);
   gl.viewport(0, 0, PM_N, PM_N);
   gl.useProgram(prog.prog);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, pm.fields[pm.cur].tex);
   gl.uniform1i(prog.u.u_state, 0);
   if (prog === pmProg) {
     gl.uniform2f(prog.u.u_texel, 1 / PM_N, 1 / PM_N);
-    gl.uniform3fv(prog.u.u_band, new Float32Array(K_BAND.flat()));
+    gl.uniform3fv(prog.u.u_band, PM_BAND);
     gl.uniform1f(prog.u.u_f0, PM_F0); gl.uniform1f(prog.u.u_f1, PM_F1);
     gl.uniform1f(prog.u.u_ml, PM_ML); gl.uniform1f(prog.u.u_mr, PM_MR);
     gl.uniform1f(prog.u.u_seed, seed || 0);
   }
+}
+function pmDrawTo(dst) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, pm.fields[pm.cur].tex);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
+function pmPass(prog, dst, seed) { pmUse(prog, seed); pmDrawTo(dst); }
 function pmSeed() {
   pm.cur = 1; pm.done = 0;   // read the other texture: never sample what is being drawn
   pmPass(pmProg, pm.fields[0], 1 + Math.random() * 100);
@@ -2264,9 +2389,12 @@ function pmSeed() {
 function pmTick() {
   if (pm.done >= PM_STEPS) return;
   const n = Math.min(150, PM_STEPS - pm.done);
-  for (let i = 0; i < n; i++) { pmPass(pmProg, pm.fields[1 - pm.cur]); pm.cur = 1 - pm.cur; }
+  pmUse(pmProg);
+  for (let i = 0; i < n; i++) { pmDrawTo(pm.fields[1 - pm.cur]); pm.cur = 1 - pm.cur; }
   pm.done += n;
-  if (++pm.frame % 6 === 0 || pm.done >= PM_STEPS) pmDraw();
+  // the read back stalls the pipeline, so the picture is only refreshed now
+  // and then while the map settles
+  if (++pm.frame % 12 === 0 || pm.done >= PM_STEPS) pmDraw();
 }
 function pmDraw() {
   pmPass(pmShowProg, pm.show);
@@ -2277,24 +2405,38 @@ function pmDraw() {
   pmCtx.putImageData(img, 0, 0);
 }
 const pmFmt = v => v.toFixed(4).replace(/^0/, '');
+// the map's size in css pixels, kept by an observer so placing a ring never
+// has to measure anything
+const pmBox = { w: 0, h: 0 };
+new ResizeObserver(([en]) => {
+  pmBox.w = en.contentRect.width; pmBox.h = en.contentRect.height;
+  pmPlaceRings();
+}).observe(document.getElementById('pm-wrap'));
+// the rings sit where they are dragged, at once; the rates catch up behind
+// them (pmAnimate). a ring that trailed the pointer read as lag.
 function pmPlaceRings() {
   const r1 = document.getElementById('pm-ring1'), r2 = document.getElementById('pm-ring2');
-  r1.style.left = (pm.c1[0] * 100) + '%'; r1.style.top = ((1 - pm.c1[1]) * 100) + '%';
-  r2.style.left = (pm.c2[0] * 100) + '%'; r2.style.top = ((1 - pm.c2[1]) * 100) + '%';
+  r1.style.transform = 'translate(' + (pm.t1[0] * pmBox.w) + 'px,' + ((1 - pm.t1[1]) * pmBox.h) + 'px)';
+  r2.style.transform = 'translate(' + (pm.t2[0] * pmBox.w) + 'px,' + ((1 - pm.t2[1]) * pmBox.h) + 'px)';
   r2.hidden = !map.on;
-  const [f1, k1] = pmKF(pm.c1[0], pm.c1[1]), [f2, k2] = pmKF(pm.c2[0], pm.c2[1]);
+  const [f1, k1] = pmKF(pm.t1[0], pm.t1[1]), [f2, k2] = pmKF(pm.t2[0], pm.t2[1]);
   document.getElementById('pm-read1').textContent = 'k ' + pmFmt(k1) + ' · f ' + pmFmt(f1);
   document.getElementById('pm-read2').textContent = map.on ? 'k ' + pmFmt(k2) + ' · f ' + pmFmt(f2) : '';
   document.getElementById('pm-wrap').setAttribute('aria-valuetext', 'feed ' + f1.toFixed(4) + ', kill ' + k1.toFixed(4));
 }
-// the rates follow the rings, eased, so the field morphs instead of jumping
+// the rates follow the rings, eased, so the field morphs instead of jumping.
+// the easing runs on the clock rather than per frame, so a heavy frame rate
+// does not drag it out.
 function pmAnimate() {
+  const now = performance.now(), dt = Math.min(0.1, (now - (pm.lastT || now)) / 1000);
+  pm.lastT = now;
+  const e = 1 - Math.exp(-dt / 0.12);
   let moved = false;
   for (const [c, t] of [[pm.c1, pm.t1], [pm.c2, pm.t2]]) {
     const dx = t[0] - c[0], dy = t[1] - c[1];
     if (Math.abs(dx) + Math.abs(dy) < 1e-5) continue;
-    const e = Math.hypot(dx, dy) < 0.002 ? 1 : 0.08;
-    c[0] += dx * e; c[1] += dy * e; moved = true;
+    const k = Math.hypot(dx, dy) < 0.002 ? 1 : e;
+    c[0] += dx * k; c[1] += dy * k; moved = true;
   }
   if (!moved) return;
   pm.applying = true;
@@ -2305,7 +2447,6 @@ function pmAnimate() {
   setParam('map_feed', f2);
   setParam('map_koff', k2 - kCrit(f2));
   pm.applying = false;
-  pmPlaceRings();
 }
 // anything else that sets the rates (a slider, an example, a preset file,
 // midi) moves the ring there at once
@@ -2317,20 +2458,28 @@ function pmFollow() {
 }
 {
   const wrap = document.getElementById('pm-wrap');
+  // the box is measured on a down, not on every move: a move then costs no layout
+  let box = null;
   const at = e => {
-    const r = wrap.getBoundingClientRect();
+    const r = box || wrap.getBoundingClientRect();
     return [clamp01((e.clientX - r.left) / r.width), clamp01(1 - (e.clientY - r.top) / r.height)];
   };
   wrap.addEventListener('pointerdown', e => {
+    box = wrap.getBoundingClientRect();
     const p = at(e);
     // with two rings up, the nearer one is taken
     pm.drag = (map.on && Math.hypot(p[0] - pm.t2[0], p[1] - pm.t2[1]) < Math.hypot(p[0] - pm.t1[0], p[1] - pm.t1[1])) ? 2 : 1;
     (pm.drag === 2 ? pm.t2 : pm.t1).splice(0, 2, ...p);
+    pmPlaceRings();
     wrap.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
-  wrap.addEventListener('pointermove', e => { if (pm.drag) (pm.drag === 2 ? pm.t2 : pm.t1).splice(0, 2, ...at(e)); });
-  const up = () => { pm.drag = 0; };
+  wrap.addEventListener('pointermove', e => {
+    if (!pm.drag) return;
+    (pm.drag === 2 ? pm.t2 : pm.t1).splice(0, 2, ...at(e));
+    pmPlaceRings();
+  });
+  const up = () => { pm.drag = 0; box = null; };
   wrap.addEventListener('pointerup', up);
   wrap.addEventListener('pointercancel', up);
   wrap.addEventListener('keydown', e => {
@@ -2338,6 +2487,7 @@ function pmFollow() {
     const k = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, d], ArrowDown: [0, -d] }[e.key];
     if (!k) return;
     t[0] = clamp01(t[0] + k[0]); t[1] = clamp01(t[1] + k[1]);
+    pmPlaceRings();
     e.preventDefault(); e.stopPropagation();
   });
 }
@@ -3337,7 +3487,23 @@ function pos(e) {
   return { uv: [cx / r.width, 1 - cy / r.height], client: [cx, cy] };
 }
 
+/* two fingers on a 3d view pinch the camera in and out. a second finger
+   while drawing ends the stroke instead of dragging it across the field. */
+const touches = new Map();
+let pinch = null;
+const touchSpan = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]) || 1; };
 canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (touches.size >= 2) {
+      canvas.setPointerCapture(e.pointerId);
+      orbit.dragging = false;
+      if (draw.active) draw.active = false;
+      if (draw.previewing) { draw.previewing = false; octx.clearRect(0, 0, overlay.width, overlay.height); }
+      pinch = orbitActive() && touches.size === 2 ? { span: touchSpan(), dist: orbit.dist } : { span: 0 };
+      return;
+    }
+  }
   if (orbitActive()) {
     canvas.setPointerCapture(e.pointerId);
     orbit.dragging = true; orbit.last = [e.clientX, e.clientY];
@@ -3359,6 +3525,11 @@ canvas.addEventListener('pointerdown', e => {
   }
 });
 canvas.addEventListener('pointermove', e => {
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pinch) {
+    if (pinch.span && touches.size === 2) setParam('pr_dist', pinch.dist * pinch.span / touchSpan());
+    return;
+  }
   if (orbit.dragging) {
     orbit.yaw   -= (e.clientX - orbit.last[0]) * 0.0075;
     orbit.pitch -= (e.clientY - orbit.last[1]) * 0.0075;
@@ -3371,7 +3542,10 @@ canvas.addEventListener('pointermove', e => {
   if (draw.tool === 'brush') { if (draw.active) draw.target = uv.slice(); }
   else if (draw.previewing) { draw.curClient = client.slice(); draw.curPx = [uv[0] * simW, uv[1] * simH]; drawPreview(); }
 });
-function endPointer() {
+function endPointer(e) {
+  touches.delete(e.pointerId);
+  // after a pinch nothing resumes until every finger is off
+  if (pinch) { if (!touches.size) pinch = null; return; }
   if (orbit.dragging) { orbit.dragging = false; updateCursor(); return; }
   if (draw.tool === 'brush') draw.active = false;
   else if (draw.previewing) { commitShape(); draw.previewing = false; octx.clearRect(0, 0, overlay.width, overlay.height); }
@@ -3536,6 +3710,7 @@ function uploadMap() {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.activeTexture(gl.TEXTURE0);
   map.dirty = false;
+  if (P.sc_map !== 0) steer.dirty = true;
 }
 // the map is shown while it is being painted, or whenever it is asked for
 const mapShown = () => map.show || (draw.target === 'map' && currentModel === 'reaction' && !project.on);
@@ -4197,7 +4372,37 @@ function toggleRecord() {
 let paused = false, smoothDisplay = true;
 let frames = 0, lastFpsT = performance.now(), fps = 0;
 
+// which of flow, orientation and scale have anything to do
+const steerOn = () => [
+  FLOW_PARAMS.some(d => P[d.id] !== 0),
+  ORIENT_PARAMS.some(d => P[d.id] !== 0),
+  P.sc_radial !== 0 || P.sc_random !== 0 || P.sc_ring !== 0 || P.sc_map !== 0,
+];
+function bakeSteer() {
+  steer.dirty = false;
+  gl.bindVertexArray(vao);
+  gl.viewport(0, 0, simW, simH);
+  gl.useProgram(steerProg.prog);
+  const u = steerProg.u;
+  gl.uniform2f(u.u_texel, 1 / simW, 1 / simH);
+  gl.uniform4f(u.u_fl1, P.fl_radial, P.fl_rotate, P.fl_swirl, P.fl_bubble);
+  gl.uniform3f(u.u_fl2, P.fl_ring, P.fl_vortex, P.fl_vert);
+  gl.uniform4f(u.u_or1, P.or_radial, P.or_circles, P.or_swirl, P.or_bubble);
+  gl.uniform1f(u.u_or2, P.or_linear);
+  gl.uniform4f(u.u_sc, P.sc_radial, P.sc_random, P.sc_ring, P.sc_map);
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, mapTex);
+  gl.uniform1i(u.u_map, 3);
+  gl.activeTexture(gl.TEXTURE0);
+  for (let part = 0; part < 2; part++) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, steer.tex[part].fbo);
+    gl.uniform1f(u.u_part, part);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+}
+
 function step() {
+  if (steer.dirty) bakeSteer();
   gl.bindVertexArray(vao);
   gl.viewport(0, 0, simW, simH);
   gl.useProgram(simProg.prog);
@@ -4218,11 +4423,14 @@ function step() {
   gl.uniform1f(simProg.u.u_rate2, P.map_rate);
   gl.uniform1f(simProg.u.u_size2, P.map_size);
   gl.uniform1f(simProg.u.u_dtcap, 1.15 / Math.max(P.dA, P.dB));
-  gl.uniform4f(simProg.u.u_fl1, P.fl_radial, P.fl_rotate, P.fl_swirl, P.fl_bubble);
-  gl.uniform3f(simProg.u.u_fl2, P.fl_ring, P.fl_vortex, P.fl_vert);
-  gl.uniform4f(simProg.u.u_or1, P.or_radial, P.or_circles, P.or_swirl, P.or_bubble);
-  gl.uniform1f(simProg.u.u_or2, P.or_linear);
-  gl.uniform4f(simProg.u.u_sc, P.sc_radial, P.sc_random, P.sc_ring, P.sc_map);
+  const on = steerOn();
+  gl.uniform3f(simProg.u.u_steeron, on[0] ? 1 : 0, on[1] ? 1 : 0, on[2] ? 1 : 0);
+  gl.activeTexture(gl.TEXTURE4);
+  gl.bindTexture(gl.TEXTURE_2D, steer.tex[0].tex);
+  gl.uniform1i(simProg.u.u_steer, 4);
+  gl.activeTexture(gl.TEXTURE5);
+  gl.bindTexture(gl.TEXTURE_2D, steer.tex[1].tex);
+  gl.uniform1i(simProg.u.u_steer2, 5);
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, mapTex);
   gl.uniform1i(simProg.u.u_map, 3);
@@ -4731,6 +4939,12 @@ buildParamRows(SCALE_PARAMS, document.getElementById('params-scale'), false);
 buildParamRows(PROJECT_PARAMS, document.getElementById('params-project'), false);
 buildPresets();
 buildPaletteUI();
+/* on a phone the panel starts folded away so the field is what opens, and on
+   any touch-first device the field starts at half resolution: a full-res field
+   there is the screen's device pixels, three or four times the texels of a
+   desktop window, on a gpu with a fraction of the throughput. */
+if (matchMedia('(max-width: 720px)').matches) togglePanel();
+if (matchMedia('(pointer: coarse)').matches) document.getElementById('simscale').value = '0.5';
 selectModel('reaction');
 setCoupled(true);
 pmSeed();
@@ -4821,4 +5035,3 @@ requestAnimationFrame(frame);
   else start();
 })();
 </script>
-

@@ -50,6 +50,17 @@ The same conventions as the lissa and modal cymatics panels:
   in the middle; the thumb catches on zero as it passes, hold `ctrl` to slide
   through.
 
+## Phones and tablets
+
+Under 720px wide the panel becomes a sheet over the bottom of the screen
+(☰ opens and closes it; it starts closed so the field is what opens). The
+pattern map is kept to a size the sheet can hold, the pin dock sits above the
+sheet, and the MIDI learn buttons are dropped. On a touch-first device sliders,
+buttons and the map rings are finger-sized, text fields are 16px so iOS does
+not zoom into them, the field starts at **half** resolution, and two fingers
+on a 3D view pinch the camera in and out (a second finger while drawing ends
+the stroke).
+
 Open `index.html` in a browser (Chrome or Edge for Web MIDI). No build step, no server needed —
 though MIDI and some export features prefer `https://` or `localhost`, so
 `python3 -m http.server` works well.
@@ -192,7 +203,8 @@ either side, so the whole width is useful and the edges show where patterns
 stop — flooded on the left, empty on the right.
 
 Drag the ring (or use the arrow keys with the map focused) to pick a pattern.
-The rates ease toward a new pick, so the new pattern grows out of the old one.
+The ring sits under the pointer; the rates ease after it on a ~0.1 s time
+constant, so the new pattern grows out of the old one.
 The examples drop the ring on the ten classic presets. The feed and kill
 sliders are still there, folded into **Solver** with the diffusion rates, bias,
 timestep and steps per frame; moving them moves the ring.
@@ -263,6 +275,13 @@ combined.
   stays at or under the isotropic one and the timestep cap still holds. The
   mixed derivative uses the four diagonal taps the 9-point stencil already
   reads.
+- **Baked fields** — flow, orientation and scale depend only on position and
+  their sliders, so they are rendered into two textures when a slider moves
+  (or the grid or vary map changes) and the solver reads them with one fetch,
+  instead of every texel re-evaluating trig and hashed noise on every step.
+  With a one-texel cell the flow's upstream bilinear read is taken from the
+  nine stencil taps the Laplacian already fetched, since the velocity is held
+  under a texel per step.
 
 ## Features
 
