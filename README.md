@@ -2,13 +2,17 @@
 
 An organic pattern synthesizer in a single dependency-free HTML file, in the
 same dark instrument-panel style as the lissajous app. The reaction-diffusion
-model is inspired by [Jason Webb's playground](https://jasonwebb.github.io/reaction-diffusion-playground/app.html);
-four more generative models sit alongside it.
+model is inspired by [Jason Webb's playground](https://jasonwebb.github.io/reaction-diffusion-playground/app.html),
+and its pattern map, vary-pattern shapes, flow, orientation and scale controls by
+[Karl Sims' RD Tool](https://karlsims.com/rdtool.html) (reimplemented from how the
+tool behaves; no code or images are taken from it). Four more generative models
+sit alongside it.
 
 ## Models
 
 Every model produces a scalar field, so the shading, contour export, and MIDI
-mapping are shared across all of them. Switch models from the panel:
+mapping are shared across all of them. The other models are kept out of the
+panel: press `/` and type **models** to list them and switch.
 
 - **Reaction–diffusion** — the dynamic Gray–Scott solver (drawing, bias,
   presets, SVG import; all described below).
@@ -26,7 +30,25 @@ mapping are shared across all of them. Switch models from the panel:
   export follow the real geometry. Drag to orbit the cluster, wheel to zoom.
 - **Flow lines** — warped wavefronts for fingerprint / topographic contours.
 
-Generative models have a **Generate** button that reshuffles the random seed.
+Generative models have a **Generate** button that reshuffles the random seed,
+and a **← reaction–diffusion** button back.
+
+## Panel
+
+The same conventions as the lissa and modal cymatics panels:
+
+- **Folding sections** — click a section title to fold it; alt-click opens
+  that one and folds the rest. What is folded is remembered per browser.
+- **Search** — `/` or `ctrl-k` opens a palette over every control. A slider
+  comes up live in the result, so it can be moved without leaving the search;
+  enter shows the control in the panel. The palette also runs commands:
+  **models** lists the pattern models, **examples** the example patterns.
+- **Pins** — the ☆ on a slider pins a copy of it to a dock on the canvas (up
+  to eight, remembered per browser).
+- **Typed values** — click a slider's readout to type a value.
+- **Centred sliders** — flow, orientation and the scale variations have zero
+  in the middle; the thumb catches on zero as it passes, hold `ctrl` to slide
+  through.
 
 Open `index.html` in a browser (Chrome or Edge for Web MIDI). No build step, no server needed —
 though MIDI and some export features prefer `https://` or `localhost`, so
@@ -160,70 +182,87 @@ Both work on the pattern rather than on the surface it sits on:
 
 ## Pattern map
 
-A greyscale map laid over the field that the reaction reads every step, so
-different areas grow different patterns at different rates. Black runs the
-reaction on the main sliders; white runs it on the map's own **feed**, **kill**,
-**speed** and **feature size**; grey blends between them.
+The pattern is picked on a map of the (feed, kill) plane rather than with
+sliders. At startup a small field is solved with feed rising up it and kill
+running across it, so every point of the map shows the pattern those two rates
+grow — solid shapes to the left, spots and solitons to the right, worms and
+mazes between. Kill is not laid out raw: across the map it spans the measured
+live band at that feed (see *live band* below) with a margin of dead plane on
+either side, so the whole width is useful and the edges show where patterns
+stop — flooded on the left, empty on the right.
 
-- **Map kill** is an offset from the live curve `k_c(f)` at the map feed, and the
-  solver blends the feed and the offset and evaluates the curve at the blended
-  feed. Blending kill directly would cut a straight line under a concave curve
-  and drop the middle of the blend out of the live band.
-- **Map speed** scales the timestep in the mapped area, held under the same
+Drag the ring (or use the arrow keys with the map focused) to pick a pattern.
+The rates ease toward a new pick, so the new pattern grows out of the old one.
+The examples drop the ring on the ten classic presets. The feed and kill
+sliders are still there, folded into **Solver** with the diffusion rates, bias,
+timestep and steps per frame; moving them moves the ring.
+
+### Vary pattern
+
+The five shape buttons under the map — radial, random, ring, horizontal,
+vertical — lay a second pattern across the frame, picked with a second, gold
+ring on the map: radial puts it in the centre, random in soft blobs, ring on a
+circle, horizontal to the right, vertical at the top. Pressing the lit button
+again drops it. The shapes are fills of the **vary map**, a greyscale map over
+the field that the reaction reads every step: black grows the main ring's
+pattern, white the gold ring's, grey the blend.
+
+- **Blending kill** — the gold ring's kill is held as an offset from the live
+  curve `k_c(f)` at its feed; the solver blends feed and the offset and
+  evaluates the curve at the blended feed. Blending kill directly would cut a
+  straight line under a concave curve and drop the middle of the blend out of
+  the live band.
+- **Map speed** scales the timestep in the white area, held under the same
   stability cap as the timestep slider. **Map feature size** damps the
-  diffusion weights, so features in that area come out smaller. It can only go
-  down, which the explicit scheme is always stable in.
+  diffusion weights there, so features come out smaller.
 - **Paint map** in the Draw section sends the brush, line, rect and circle tools
-  to the map instead of the field, with a paint value and a softness. The map
-  is tinted over the pattern while you paint it, or whenever **show map** is on.
-- **Import image** loads a photo as the map: cover-fitted, read by luminance
-  with dark areas taking the map regime, contrast stretched to the full range.
-  With the default regimes (coral worms on the main sliders, mitosis spots on
-  the map) a portrait comes out as worms in the light and spots in the shadow.
-  **Gradient** (along the **gradient angle**), **radial**, **noise** (soft
-  blobs at the **noise scale**), **invert** and **clear** fill the map directly.
-- The map also feeds the fields below: scale can read it as its size map, and
-  flow and orientation can follow its contours.
-- Painting or importing switches the map on. The map is saved in the preset
-  JSON as a PNG.
+  to the vary map instead of the field, with a paint value and a softness. The
+  map is tinted over the pattern while you paint it, or whenever **show map** is
+  on. Painting lights the last vary button.
+- **Import image** loads a photo as the vary map: cover-fitted, read by
+  luminance with dark areas taking the gold ring's pattern, contrast stretched
+  to the full range. **Gradient** (along the gradient angle), **radial**,
+  **noise**, **invert** and **clear** fill it directly.
+- The vary map is saved in the preset JSON as a PNG.
 
-## Flow, orientation and scale
+## Scale, flow and orientation
 
-Three fields laid over the frame that steer the reaction-diffusion pattern
-rather than pick its regime. Each has a type — off, a procedural field, or the
-pattern map — and its own knobs. Vector fields (flow, orientation) come as
-**uniform**, **radial**, **circular**, **noise** and **along map contours**,
-and a **turn** rotates the whole field: radial turned 45° is a spiral, 90° is
-circular; map contours turned 90° run down the map's slopes.
+Signed sliders, zero in the middle, that add together — so any of them can be
+combined.
 
-- **Flow** — the chemicals are advected along the field while they react, so
-  the pattern streams, spirals or swirls. Semi-Lagrangian: each texel takes
-  its state from a fraction of a texel upstream, read bilinearly (the field is
-  stored nearest-sampled, and a sub-texel flow would otherwise round to
-  standing still), and the reaction runs on what arrived. Speed is in texels
-  per step; negative runs it backwards. The bilinear read adds a numerical
-  diffusion of `a(1−a)/2` per axis to both chemicals alike, which pulls their
-  rates together and floods the frame at a few tenths of a texel per step, so
-  it is subtracted back out with the stencil's own second differences
-  (Lax–Wendroff in 1-D). Turbulent flow is the curl of a noise field —
-  divergence-free, so it stirs without sinks swallowing the pattern.
-- **Orientation** — diffusion becomes a tensor, `D = I − a·n nᵀ`, with `n`
-  across the field direction: full strength along it, cut by the
-  **anisotropy** `a` across it. The pattern's wavelength shortens across the
-  field and stays long along it, so stripes and chains of spots line up with
-  the field — concentric rings for circular, a sunburst for radial. Diffusion
-  is only ever taken away, so every eigenvalue stays at or under the
-  isotropic one and the timestep cap still holds. The mixed derivative uses
-  the four diagonal taps the 9-point stencil already reads.
-- **Scale** — the pattern's size varies over the frame between **scale at
-  black** and **scale at white** of a linear gradient (with an angle), a
-  radial field (black at the centre), noise, or the pattern map, blended in
-  log space. Feature size goes as `√(D/k)`: under 1 the diffusion weights are
-  damped (always stable); over 1 the weights are left alone and the reaction
-  is slowed by the square instead, so nothing is raised past the stability
-  limit — large regions grow more slowly.
-
-All three are saved in the preset JSON and default to off.
+- **Scale** sets the size of the pattern (the cell size, below). **Scale
+  radial**, **random**, **ring** and **by vary map** vary it across the frame,
+  in octaves: radial grows it toward the centre (negative: toward the rim),
+  random lays slow blobs of large and small, ring swells it on a circle round
+  the centre, by vary map follows the vary map. Feature size goes as `√(D/k)`;
+  below 1× the diffusion weights are damped (always stable), above 1× the
+  reaction is slowed by the square instead, so nothing is raised past the
+  stability limit — the price is that large areas grow more slowly. The local
+  scale is held between 0.3× and 3.5×.
+- **Speed** scales the steps per frame, two octaves either way.
+- **Flow** carries the chemicals along a velocity field while they react:
+  **radial** out from the centre, **rotate** turns the frame rigidly, **swirl**
+  turns it at one speed at every radius so the middle laps the edge and winds
+  the pattern into a spiral, **bubble** stirs convection rolls (the curl of
+  `sin x sin y`), **ring** gathers onto a circle, **vortex** is a point vortex,
+  **vertical** drifts upward. The advection is semi-Lagrangian: each texel
+  takes its state from a fraction of a texel upstream, read bilinearly, and the
+  reaction runs on what arrived. The bilinear read adds a numerical diffusion
+  of `a(1−a)/2` per axis to both chemicals alike, which pulls their rates
+  together and floods the frame at a few tenths of a texel per step, so it is
+  subtracted back out with the stencil's own second differences (Lax–Wendroff
+  in 1-D).
+- **Orientation** makes diffusion faster one way than the other, so stripes
+  line up: **radial** as spokes, **circles** as rings, **swirl** as a spiral,
+  **bubble** round convection rolls, **linear** vertical when positive and
+  horizontal when negative. The kinds add as arrows, so a sign only shows once
+  two are combined (radial plus circles is one spiral, radial minus circles the
+  other). The sum's direction `t` and length set a diffusion tensor
+  `D = I − a·n nᵀ`, `n ⊥ t`, `a = 0.92·min(1, |sum|)`: full strength along the
+  stripes, cut across them. Diffusion is only taken away, so every eigenvalue
+  stays at or under the isotropic one and the timestep cap still holds. The
+  mixed derivative uses the four diagonal taps the 9-point stencil already
+  reads.
 
 ## Features
 
@@ -246,7 +285,7 @@ All three are saved in the preset JSON and default to off.
   past it the field saturates in one jump), and B is held to half of A's
   diffusion rate, without which no Turing instability exists. Unlock for the
   full plane.
-- **Cell size** — how large a spot comes out, independent of the resolution and
+- **Cell size** (the **scale** slider) — how large a spot comes out, independent of the resolution and
   of the tiling on a projection. Spot size is not normally a free parameter of
   Gray–Scott: it falls out of the diffusion lengths measured in grid cells, so
   the only ways to change it were to change the grid or to wrap more copies of
@@ -318,6 +357,7 @@ All three are saved in the preset JSON and default to off.
 | `v` | start / stop video recording |
 | `o` | toggle 3D projection |
 | `h` | toggle control panel |
+| `/` or `ctrl-k` | search parameters, run commands (`models`, `examples`) |
 
 Drag on the canvas to draw with the current tool; hold `shift` to erase.
 Pause first if you want to sketch a seed without the reaction advancing.
