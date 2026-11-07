@@ -81,8 +81,91 @@
   .section { border-bottom: 1px solid var(--line); padding: 16px 18px 18px; }
   .section h2 {
     font-size: 9px; font-weight: 600; letter-spacing: 0.3em; text-transform: uppercase;
-    color: var(--ink-dim); margin-bottom: 14px;
+    color: var(--ink-dim); margin-bottom: 14px; cursor: pointer; user-select: none;
   }
+  .section h2:hover { color: var(--ink); }
+  /* every section folds away from its own title bar */
+  .section > h2::before {
+    content: '\25BE'; display: inline-block; width: 12px; font-size: 9px; color: var(--ink-dim);
+    transition: transform 0.15s ease;
+  }
+  .section.collapsed > h2::before { transform: rotate(-90deg); }
+  .section.collapsed > h2 { margin-bottom: 0; }
+  .section.collapsed { padding-bottom: 16px; }
+  .section.collapsed > *:not(h2) { display: none !important; }
+
+  #findtoggle {
+    position: fixed; top: 14px; right: 352px; z-index: 11;
+    background: var(--panel); border: 1px solid var(--line-strong); color: var(--ink-dim);
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; padding: 6px 10px; cursor: pointer;
+    border-radius: 3px; transition: right 0.25s ease; display: inline-flex; align-items: center; gap: 6px;
+  }
+  body.panel-hidden #findtoggle { right: 62px; }
+  #findtoggle:hover { color: var(--accent); border-color: var(--accent-dim); }
+  kbd { font-family: var(--mono); font-size: 9px; color: var(--ink-dim); border: 1px solid var(--line-strong); border-radius: 3px; padding: 0 4px; }
+
+  .param-search {
+    position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; align-items: flex-start;
+    padding: min(12vh, 90px) 16px 16px; background: rgba(4, 5, 8, 0.55);
+  }
+  .param-search[hidden] { display: none; }
+  .ps-box {
+    width: min(520px, 100%); max-height: calc(100% - 20px); display: flex; flex-direction: column;
+    background: rgb(16, 18, 23); border: 1px solid var(--control-border); border-radius: 4px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6); overflow: hidden;
+  }
+  .ps-q { display: flex; align-items: center; gap: 10px; padding: 11px 13px; border-bottom: 1px solid var(--line); color: var(--ink-dim); }
+  .ps-q input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--ink); font-family: var(--mono); font-size: 13px; }
+  .ps-results { overflow-y: auto; min-height: 0; }
+  .ps-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 5px 10px; align-items: center; padding: 9px 13px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .ps-row.sel { background: rgba(126, 240, 192, 0.06); box-shadow: inset 3px 0 0 var(--accent); }
+  .ps-name { color: var(--ink); font-size: 11px; letter-spacing: 0.08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ps-name mark { background: none; color: var(--accent); }
+  .ps-where { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim); white-space: nowrap; }
+  .ps-val { color: var(--accent); font-size: 10px; font-variant-numeric: tabular-nums; min-width: 5ch; text-align: right; }
+  .ps-ctl { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+  .ps-empty { padding: 14px 13px; color: var(--ink-dim); font-size: 11px; }
+  .ps-foot { padding: 7px 13px; border-top: 1px solid var(--line); color: var(--ink-dim); font-size: 10px; letter-spacing: 0.04em; }
+
+  .pin-btn {
+    flex: none; background: none; border: 0; padding: 0 3px; min-width: 0; min-height: 0;
+    color: var(--line-strong); font-size: 12px; line-height: 1; cursor: pointer;
+  }
+  .param .row1 .pin-btn { margin-left: auto; margin-right: 6px; }
+  .pin-btn:hover { color: var(--ink-dim); }
+  .pin-btn[aria-pressed="true"] { color: var(--accent); }
+  .pin-dock {
+    position: fixed; left: 22px; right: 330px; bottom: 40px; z-index: 6;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px;
+    padding: 9px 12px; background: var(--panel); backdrop-filter: blur(10px);
+    border: 1px solid var(--line-strong); border-radius: 4px; font-size: 10px; transition: right 0.25s ease;
+  }
+  body.panel-hidden .pin-dock { right: 22px; }
+  .pin-dock[hidden] { display: none; }
+  .dk { display: grid; gap: 2px; min-width: 0; }
+  .dk-h { display: flex; gap: 6px; align-items: baseline; color: var(--ink); letter-spacing: 0.12em; text-transform: uppercase; font-size: 9px; }
+  .dk-h > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dk-v { margin-left: auto; color: var(--accent); font-variant-numeric: tabular-nums; letter-spacing: 0.04em; text-transform: none; }
+  .dk-x { background: none; border: 0; color: var(--ink-dim); cursor: pointer; padding: 0 2px; font-size: 11px; min-width: 0; min-height: 0; opacity: 0; }
+  .dk:hover .dk-x, .dk-x:focus-visible { opacity: 1; }
+
+  .param .val { cursor: text; }
+  .val-edit {
+    width: 8ch; padding: 0 3px; text-align: right; min-height: 0;
+    background: #0d0f13; color: var(--accent); border: 1px solid var(--accent); border-radius: 2px; font: inherit;
+  }
+  .val-edit:focus { outline: none; }
+  .flash-find { animation: flash-find 1.5s ease-out; border-radius: 3px; }
+  @keyframes flash-find {
+    0%, 30% { box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px rgba(126, 240, 192, 0.18); }
+    100% { box-shadow: 0 0 0 2px transparent, 0 0 0 6px transparent; }
+  }
+  /* a slider whose middle is zero: a tick marks it, and the thumb snaps to it */
+  input[type="range"].bipolar::-webkit-slider-runnable-track {
+    background: linear-gradient(90deg, transparent calc(50% - 1px), var(--ink-dim) calc(50% - 1px), var(--ink-dim) calc(50% + 1px), transparent calc(50% + 1px)) center / 100% 8px no-repeat, var(--line-strong);
+    background-clip: border-box;
+  }
+  input[type="range"].bipolar { background: linear-gradient(90deg, transparent calc(50% - 1px), var(--ink-dim) calc(50% - 1px), var(--ink-dim) calc(50% + 1px), transparent calc(50% + 1px)) center / 100% 8px no-repeat; }
   .section h2 .tag { float: right; color: var(--accent); letter-spacing: 0.1em; }
 
   /* param rows */
@@ -161,6 +244,40 @@
   .swatch span {
     font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim);
   }
+
+  /* ---------- pattern map ---------- */
+  #pm-wrap {
+    position: relative; width: 100%; aspect-ratio: 1; cursor: crosshair; touch-action: none;
+    border: 1px solid var(--line-strong); border-radius: 3px; overflow: hidden; background: #0d0f13;
+  }
+  #pmap { width: 100%; height: 100%; display: block; image-rendering: auto; }
+  .pm-ring {
+    position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+    border: 2px solid var(--accent); box-shadow: 0 0 0 1px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(0,0,0,0.7);
+    pointer-events: none;
+  }
+  .pm-ring.two { border-color: #f2c14e; }
+  .pm-ax { position: absolute; font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-dim);
+    text-shadow: 0 1px 3px #000; pointer-events: none; }
+  .pm-ax-f { left: 5px; top: 4px; }
+  .pm-ax-k { right: 5px; bottom: 3px; }
+  .pm-read { display: flex; justify-content: space-between; margin-top: 6px; font-size: 10px; letter-spacing: 0.06em; color: var(--accent); }
+  .pm-read span:last-child { color: #f2c14e; }
+  .vary-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  button.vary {
+    height: 30px; padding: 3px; background: transparent; border: 1px solid var(--line-strong); border-radius: 3px; cursor: pointer;
+  }
+  button.vary:hover { border-color: var(--ink-dim); }
+  button.vary.active { border-color: #f2c14e; box-shadow: inset 0 0 0 1px #f2c14e; }
+  .vi { display: block; width: 100%; height: 100%; border-radius: 2px; --a: #f2c14e; --b: #1d2a3a; }
+  .vi-radial { background: radial-gradient(circle, var(--a) 0, var(--b) 75%); }
+  .vi-random { background: radial-gradient(circle at 25% 35%, var(--a) 0 18%, transparent 30%),
+                           radial-gradient(circle at 70% 65%, var(--a) 0 15%, transparent 28%),
+                           radial-gradient(circle at 80% 20%, var(--a) 0 10%, transparent 20%), var(--b); }
+  .vi-ring { background: radial-gradient(circle, var(--b) 0 22%, var(--a) 38%, var(--b) 58%); }
+  .vi-horiz { background: linear-gradient(90deg, var(--b), var(--a)); }
+  .vi-vert { background: linear-gradient(0deg, var(--b), var(--a)); }
+  .vi-custom { background: conic-gradient(from 30deg, var(--b), var(--a), var(--b), var(--a), var(--b)); opacity: 0.85; }
 
   .hint { font-size: 9.5px; line-height: 1.7; color: var(--ink-dim); letter-spacing: 0.04em; }
   .hint b { color: var(--ink); font-weight: 400; }
@@ -251,29 +368,80 @@
 <div id="recbadge"><span class="dot"></span><span id="rectime">REC 00:00</span></div>
 <div id="status"></div>
 <button id="paneltoggle" aria-label="Show or hide the controls panel" aria-expanded="true" aria-controls="panel">☰</button>
+<button id="findtoggle" type="button" title="Find a parameter or command ( / )" aria-label="Find a parameter or command"
+        aria-haspopup="dialog" aria-controls="param-search">⌕ <kbd>/</kbd></button>
+<div class="pin-dock" id="pin-dock" role="region" aria-label="Pinned controls" hidden></div>
+
+<div class="param-search" id="param-search" role="dialog" aria-modal="true" aria-label="Find a parameter or command" hidden>
+  <div class="ps-box">
+    <div class="ps-q">
+      <span aria-hidden="true">⌕</span>
+      <input id="ps-input" type="text" autocomplete="off" spellcheck="false" placeholder="find a parameter… or type a command: models, examples"
+             role="combobox" aria-expanded="true" aria-controls="ps-results" aria-autocomplete="list">
+      <kbd>esc</kbd>
+    </div>
+    <div class="ps-results" id="ps-results" role="listbox" aria-label="Matching parameters and commands"></div>
+    <div class="ps-foot">↑↓ choose · ↵ show in panel / run · ☆ pin to the canvas</div>
+  </div>
+</div>
 
 <div id="panel">
-  <div class="section">
-    <h2>Model <span class="tag" id="model-tag"></span></h2>
-    <select aria-label="Reaction-diffusion model" id="model">
+  <div class="section" id="sec-model">
+    <h2>Pattern <span class="tag" id="model-tag"></span></h2>
+    <!-- the other models are reached from the search: type "models" -->
+    <select aria-label="Model" id="model" hidden>
       <option value="reaction" selected>reaction–diffusion</option>
       <option value="voronoi">voronoi cells</option>
       <option value="marble">marble veins</option>
       <option value="metaballs">metaballs</option>
       <option value="stripes">flow lines</option>
     </select>
-    <select aria-label="Preset" id="preset"></select>
-    <div id="params-model"></div>
     <div id="reaction-extra">
-      <div class="btnrow" style="margin:2px 0 8px">
-        <button class="act primary" id="btn-couple">live band: locked</button>
+      <div id="pm-wrap" role="slider" tabindex="0" aria-label="Pattern map: feed rate rises up the map, kill rate across it. Click or drag to pick a pattern; arrow keys nudge it."
+           aria-valuetext="">
+        <canvas id="pmap" width="256" height="256"></canvas>
+        <div class="pm-ring" id="pm-ring1"></div>
+        <div class="pm-ring two" id="pm-ring2" hidden></div>
+        <span class="pm-ax pm-ax-f">feed ↑</span><span class="pm-ax pm-ax-k">kill →</span>
       </div>
-      <div class="hint" id="band-note"></div>
+      <div class="pm-read"><span id="pm-read1"></span><span id="pm-read2"></span></div>
+      <div class="sublabel" style="margin-top:10px">vary pattern</div>
+      <div class="vary-row" id="vary" role="group" aria-label="Vary the pattern across the frame">
+        <button class="vary" data-vary="radial" title="radial — the second pattern in the centre" aria-label="vary radially"><i class="vi vi-radial"></i></button>
+        <button class="vary" data-vary="random" title="random — blobs of the second pattern" aria-label="vary randomly"><i class="vi vi-random"></i></button>
+        <button class="vary" data-vary="ring" title="ring — the second pattern on a ring" aria-label="vary on a ring"><i class="vi vi-ring"></i></button>
+        <button class="vary" data-vary="horiz" title="horizontal — the second pattern to the right" aria-label="vary horizontally"><i class="vi vi-horiz"></i></button>
+        <button class="vary" data-vary="vert" title="vertical — the second pattern at the top" aria-label="vary vertically"><i class="vi vi-vert"></i></button>
+        <button class="vary" data-vary="custom" title="painted or imported — see the vary map section" aria-label="painted vary map"><i class="vi vi-custom"></i></button>
+      </div>
+      <div class="hint" style="margin:8px 0 10px">
+        drag the <b>ring</b> to pick a pattern — it grows out of the one before. a
+        <b>vary</b> button lays a second pattern across the frame: drag the <b>gold ring</b>
+        to choose it. press the lit button again to drop it.
+      </div>
+      <select aria-label="Example patterns" id="preset"></select>
     </div>
+    <div id="generative-extra" hidden>
+      <div class="btnrow" style="margin-bottom:10px">
+        <button class="act" id="btn-backrd">← reaction–diffusion</button>
+      </div>
+    </div>
+    <div id="params-model"></div>
     <div class="hint" id="model-note"></div>
   </div>
 
+  <div class="section collapsed" id="sec-solver">
+    <h2>Solver</h2>
+    <div id="params-solver"></div>
+    <div class="btnrow" style="margin:2px 0 8px">
+      <button class="act primary" id="btn-couple">live band: locked</button>
+    </div>
+    <div class="hint" id="band-note"></div>
+    <div class="hint" id="solver-note" style="margin-top:10px"></div>
+  </div>
+
   <div class="section" id="sec-sim">
+    <h2>Simulation</h2>
     <div class="sublabel">resolution</div>
     <select aria-label="Simulation resolution" id="simscale">
       <option value="0.25">quarter — fast</option>
@@ -321,8 +489,8 @@
     </div>
   </div>
 
-  <div class="section" id="sec-map">
-    <h2>Pattern map <span class="tag" id="map-tag"></span></h2>
+  <div class="section collapsed" id="sec-map">
+    <h2>Vary map <span class="tag" id="map-tag"></span></h2>
     <div class="btnrow" style="margin-bottom:10px">
       <button class="act" id="btn-mapon">map: off</button>
       <button class="act" id="btn-mapshow">show map: off</button>
@@ -341,11 +509,11 @@
     </div>
     <input aria-label="Import an image as the parameter map" type="file" id="mapfile" accept="image/*" style="display:none">
     <div class="hint" style="margin-top:10px">
-      a greyscale map laid over the field. black runs the reaction on the main
-      sliders; white runs it on the <b>map</b> feed, kill, speed and feature size;
-      grey blends between them, so the pattern changes kind and growth rate across
-      the frame. the map kill is measured from the live curve at the map feed, so
-      every blend stays alive.<br><br>
+      the greyscale map behind <b>vary pattern</b>. black grows the main ring's
+      pattern, white the gold ring's, grey the blend between them — and white also
+      takes the <b>map speed</b> and <b>map feature size</b> below. the vary buttons
+      fill it with a shape; paint over it with <b>paint map</b> in the draw section,
+      or load an image. painting or importing lights the last vary button.<br><br>
       <b>import image</b> loads a photo as the map — dark areas take the map
       regime, contrast is stretched to the full range. <b>invert</b> swaps them.
       <b>gradient</b> runs along the gradient angle; <b>noise</b> lays soft blobs
@@ -354,40 +522,40 @@
     </div>
   </div>
 
+  <div class="section" id="sec-scale">
+    <h2>Scale &amp; speed</h2>
+    <div id="params-scale"></div>
+    <div class="hint">
+      <b>scale</b> sets the size of the pattern. the others vary it across the frame
+      and add together: <b>radial</b> grows it toward the centre (negative: the rim),
+      <b>random</b> lays slow blobs of large and small, <b>ring</b> swells it on a
+      circle, <b>by vary map</b> follows the vary map. large areas grow more slowly.
+      the middle of a centred slider is zero — it catches there; hold <b>ctrl</b> to
+      slide through.
+    </div>
+  </div>
+
   <div class="section" id="sec-flow">
-    <h2>Flow <span class="tag" id="flow-tag"></span></h2>
-    <select aria-label="Flow field" id="fx-flow"></select>
+    <h2>Flow</h2>
     <div id="params-flow"></div>
     <div class="hint">
-      carries the chemicals along a velocity field while they react, so the
-      pattern streams, spirals or swirls. speed is in texels per step; negative
-      runs it backwards. <b>turn</b> rotates the whole field — radial turned 45°
-      is a spiral, turned 90° it is circular. <b>along map contours</b> follows the
-      isolines of the pattern map; turned 90° it runs down its slopes.
+      carries the chemicals along a velocity field while they react. each kind runs
+      either way and they add: <b>radial</b> out from the centre, <b>rotate</b> turns
+      the frame, <b>swirl</b> winds it into a spiral, <b>bubble</b> stirs convection
+      rolls, <b>ring</b> gathers onto a circle, <b>vortex</b> spins hard at the centre,
+      <b>vertical</b> drifts upward.
     </div>
   </div>
 
   <div class="section" id="sec-orient">
-    <h2>Orientation <span class="tag" id="orient-tag"></span></h2>
-    <select aria-label="Orientation field" id="fx-orient"></select>
+    <h2>Orientation</h2>
     <div id="params-orient"></div>
     <div class="hint">
-      makes diffusion anisotropic: weaker across the field direction than along
-      it, so stripes and chains of spots line up with the field. same field
-      types and turn as flow — radial gives a sunburst, circular concentric
-      rings, <b>along map contours</b> lays the pattern along the map's shapes.
-    </div>
-  </div>
-
-  <div class="section" id="sec-scale">
-    <h2>Scale <span class="tag" id="scale-tag"></span></h2>
-    <select aria-label="Scale field" id="fx-scale"></select>
-    <div id="params-scale"></div>
-    <div class="hint">
-      varies the size of the pattern across the frame, from the scale at black
-      to the scale at white of the chosen field (radial is black at the centre).
-      under 1 the diffusion is shortened; over 1 the reaction is slowed instead,
-      so large regions grow more slowly — by the square of the scale.
+      makes diffusion faster one way than the other, so stripes line up:
+      <b>radial</b> as spokes, <b>circles</b> as rings, <b>swirl</b> as a spiral,
+      <b>bubble</b> round convection rolls, <b>linear</b> vertical when positive and
+      horizontal when negative. the kinds add as arrows, so a sign shows only when
+      two are combined.
     </div>
   </div>
 
@@ -430,7 +598,7 @@
     </div>
   </div>
 
-  <div class="section">
+  <div class="section" id="sec-render">
     <h2>Rendering</h2>
     <select aria-label="Colour palette" id="palette"></select>
     <div id="swatches" style="display:none"></div>
@@ -444,7 +612,7 @@
     </div>
   </div>
 
-  <div class="section">
+  <div class="section" id="sec-liquid">
     <h2>Liquid <span class="tag" id="liquid-tag"></span></h2>
     <div id="params-liquid"></div>
     <div class="hint">
@@ -456,7 +624,7 @@
     </div>
   </div>
 
-  <div class="section">
+  <div class="section collapsed" id="sec-midi">
     <h2>MIDI</h2>
     <div id="midistatus">probing midi access…</div>
     <div class="btnrow">
@@ -467,7 +635,7 @@
     </div>
   </div>
 
-  <div class="section">
+  <div class="section" id="sec-export">
     <h2>Export</h2>
     <div class="sublabel">svg contour levels</div>
     <div class="selrow">
@@ -504,11 +672,13 @@
     </div>
   </div>
 
-  <div class="section">
+  <div class="section collapsed" id="sec-keys">
     <h2>Keys</h2>
     <div class="hint">
       <b>space</b> pause · <b>g</b> generate / reseed · <b>c</b> clear · <b>1–4</b> tools<br>
       <b>e</b> erase · <b>x</b> fill · <b>o</b> 3d projection · <b>s</b> png · <b>v</b> record · <b>h</b> panel<br><br>
+      <b>/</b> or <b>ctrl-k</b> find a parameter · type <b>models</b> or <b>examples</b> there<br>
+      <b>☆</b> pins a slider to the canvas · click a value to type it<br>
       <b>double-click</b> any slider to put it back where it started.
     </div>
   </div>
@@ -609,16 +779,15 @@ uniform float u_vmode;   // 0 the field wraps in v · 1 poles at both ends · 2 
    the curve is evaluated at the blended feed. */
 uniform sampler2D u_map;
 uniform float u_mapon, u_feed2, u_koff, u_koff2, u_rate2, u_size2, u_dtcap;
-/* flow, orientation and scale — three fields laid over the frame that steer
-   the reaction rather than choose its regime. each is .x the field type
-   (0 off), and then:
-     u_flow    .y speed in texels per step, .z turn (rad), .w noise frequency
-     u_orient  .y anisotropy 0..1,          .z turn (rad), .w noise frequency
-     u_scale   .y scale at 0, .z scale at 1, .w noise frequency; u_scangle
-   vector types: 1 uniform · 2 radial · 3 circular · 4 noise · 5 the map's
-   contours. scalar types: 1 linear · 2 radial · 3 noise · 4 the map. */
-uniform vec4  u_flow, u_orient, u_scale;
-uniform float u_scangle;
+/* flow, orientation and scale — fields over the frame that steer the reaction
+   rather than choose its regime. every term is a signed amount, zero is off,
+   and the terms add, so they combine:
+     u_fl1  radial · rotate · swirl · bubble      u_fl2  ring · vortex · vertical
+     u_or1  radial · circles · swirl · bubble     u_or2  linear
+     u_sc   radial · random · ring · map */
+uniform vec4  u_fl1, u_or1, u_sc;
+uniform vec3  u_fl2;
+uniform float u_or2;
 in vec2 v_uv;
 out vec4 outColor;
 
@@ -641,45 +810,58 @@ float vnoise(vec2 p) {
 }
 float fbm(vec2 p) { return 0.65 * vnoise(p) + 0.35 * vnoise(p * 2.13 + 17.3); }
 vec2 rot2(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
-// the map's gradient, measured across a few percent of the frame so it reads
-// the shape painted rather than the grain of a photo, in field units
-vec2 mapGrad(vec2 uv) {
-  vec2 h = vec2(0.012 * u_texel.x / u_texel.y, 0.012);
-  float gx = texture(u_map, uv + vec2(h.x, 0.0)).r - texture(u_map, uv - vec2(h.x, 0.0)).r;
-  float gy = texture(u_map, uv + vec2(0.0, h.y)).r - texture(u_map, uv - vec2(0.0, h.y)).r;
-  return vec2(gx, gy) / (2.0 * 0.012);
+/* convection rolls: the curl of sin x sin y, three across the height of the
+   frame, alternate cells turning opposite ways. unit speed at its fastest. */
+vec2 bubble(vec2 p) {
+  vec2 a = p * 9.42478;
+  return vec2(sin(a.x) * cos(a.y), -cos(a.x) * sin(a.y));
 }
-/* a unit direction field, and in mag how strongly it holds here: radial and
-   circular fade out over the last speck of the centre, where they have no
-   direction to give; the map's contours fade out where the map is flat */
-vec2 dirField(float type, float turn, float freq, vec2 uv, out float mag) {
-  vec2 p = fieldPos(uv), d = vec2(1.0, 0.0);
-  float r = length(p);
-  mag = 1.0;
-  if (type < 1.5) d = vec2(1.0, 0.0);
-  else if (type < 2.5) { d = p / max(r, 1e-5); mag = smoothstep(0.0, 0.06, r); }
-  else if (type < 3.5) { d = vec2(-p.y, p.x) / max(r, 1e-5); mag = smoothstep(0.0, 0.06, r); }
-  else if (type < 4.5) { float a = fbm(p * freq) * 12.566; d = vec2(cos(a), sin(a)); }
-  else {
-    vec2 g = mapGrad(uv);
-    float gn = length(g);
-    mag = smoothstep(0.02, 0.4, gn);
-    d = gn > 1e-5 ? vec2(-g.y, g.x) / gn : vec2(1.0, 0.0);   // along the contours
-  }
-  return rot2(d, turn);
-}
-// a scalar field in 0..1
-float scalarField(float type, float ang, float freq, vec2 uv) {
+/* the velocity, in texels per step. radial runs out from the centre; rotate
+   turns the whole frame rigidly; swirl turns it at one speed at every radius,
+   so the middle laps the edge and winds the pattern into a spiral; vortex is a
+   point vortex, fast at the centre and dying off as 1/r; ring runs in toward a
+   circle (or out from it, negative); vertical is a straight upward drift. */
+vec2 flowAt(vec2 uv) {
   vec2 p = fieldPos(uv);
-  float asp = u_texel.y / u_texel.x;
-  if (type < 1.5) {
-    vec2 d = vec2(cos(ang), sin(ang));
-    float ext = 0.5 * (abs(d.x) * asp + abs(d.y));
-    return clamp(0.5 + 0.5 * dot(p, d) / ext, 0.0, 1.0);
-  }
-  if (type < 2.5) return clamp(length(p) / (0.5 * length(vec2(asp, 1.0))), 0.0, 1.0);
-  if (type < 3.5) return smoothstep(0.2, 0.8, fbm(p * freq));
-  return texture(u_map, uv).r;
+  float r = length(p), core = smoothstep(0.0, 0.05, r);
+  vec2 rh = r > 1e-5 ? p / r : vec2(0.0), th = vec2(-rh.y, rh.x);
+  vec2 v = u_fl1.x * rh * core
+         + u_fl1.y * vec2(-p.y, p.x) * 2.0
+         + u_fl1.z * th * core
+         + u_fl1.w * bubble(p)
+         + u_fl2.x * rh * clamp((0.3 - r) * 8.0, -1.0, 1.0) * core
+         + u_fl2.y * th * min(1.0, 0.07 / max(r, 1e-4)) * core
+         + vec2(0.0, u_fl2.z);
+  v *= 0.6;
+  float m = length(v);
+  return m > 0.9 ? v * (0.9 / m) : v;
+}
+/* the direction stripes line up with, as a vector: the terms add as arrows,
+   so a sign only matters once two of them are combined (radial plus circles
+   is a spiral, radial minus circles the other spiral). linear is the one
+   exception — vertical when positive, horizontal when negative. how long
+   the sum is says how strongly the stripes are held to it. */
+vec2 orientAt(vec2 uv) {
+  vec2 p = fieldPos(uv);
+  float r = length(p), core = smoothstep(0.0, 0.05, r);
+  vec2 rh = r > 1e-5 ? p / r : vec2(0.0), th = vec2(-rh.y, rh.x);
+  return core * (u_or1.x * rh + u_or1.y * th + u_or1.z * 0.7071 * (rh + th))
+       + u_or1.w * bubble(p)
+       + (u_or2 > 0.0 ? vec2(0.0, u_or2) : vec2(-u_or2, 0.0));
+}
+/* the local scale, as a multiple of the cell size, in octaves: radial grows
+   it toward the centre (positive) or the rim (negative), random lays big
+   slow blobs of large and small, ring swells it on a circle round the centre,
+   map follows the vary map — white large, black small. */
+float scaleAt(vec2 uv) {
+  vec2 p = fieldPos(uv);
+  float r = length(p), rn = r / (0.5 * length(vec2(u_texel.y / u_texel.x, 1.0)));
+  float ring = exp(-pow((r - 0.28) / 0.08, 2.0));
+  float ls = u_sc.x * 1.6 * (1.0 - 2.0 * rn)
+           + u_sc.y * 2.6 * (fbm(p * 1.7 + 3.1) - 0.5) * 2.0
+           + u_sc.z * 1.8 * (2.0 * ring - 0.4)
+           + u_sc.w * 1.6 * (2.0 * texture(u_map, uv).r - 1.0);
+  return clamp(exp2(ls), 0.3, 3.5);
 }
 
 // past the v edge the field continues the way the object does: across a pole
@@ -869,9 +1051,8 @@ void main() {
      either way nothing is raised, so the timestep keeps all its headroom —
      the price of a large region is that it grows more slowly. */
   float rslow = 1.0;
-  if (u_scale.x > 0.5) {
-    float t = scalarField(u_scale.x, u_scangle, u_scale.w, v_uv);
-    float sc = exp(mix(log(u_scale.y), log(u_scale.z), t));
+  if (dot(abs(u_sc), vec4(1.0)) > 0.0) {
+    float sc = scaleAt(v_uv);
     if (sc < 1.0) w *= sc * sc;
     else rslow = 1.0 / (sc * sc);
   }
@@ -901,11 +1082,12 @@ void main() {
      taking diffusion away rather than adding it keeps every eigenvalue at or
      under the isotropic one, so the timestep cap still holds. the 0.3 is what
      the 9-point stencil above is of the true laplacian, so the two agree. */
-  if (u_orient.x > 0.5) {
-    float mag;
-    vec2 t = dirField(u_orient.x, u_orient.z, u_orient.w, v_uv, mag);
+  vec2 od = orientAt(v_uv);
+  float ol = length(od);
+  if (ol > 1e-4) {
+    vec2 t = od / ol;
     vec2 n = vec2(-t.y, t.x);
-    float a = u_orient.y * mag;
+    float a = 0.92 * min(1.0, ol);
     vec2 uxx = tR + tL - 2.0 * c, uyy = tU + tD - 2.0 * c;
     vec2 uxy = 0.25 * (tRU - tLU - tRD + tLD);
     lap -= 0.3 * a * (n.x * n.x * w.x * uxx + n.y * n.y * w.y * uyy
@@ -927,21 +1109,8 @@ void main() {
      coarse cell the read is the smooth reconstruction instead, whose error
      is not this one, so it is left alone there. */
   vec2 base = c;
-  if (u_flow.x > 0.5) {
-    float mag;
-    vec2 d;
-    if (u_flow.x > 3.5 && u_flow.x < 4.5) {
-      // turbulence is the curl of the noise, not a noise of angles: a field of
-      // angles has sources and sinks, and a sink swallows the pattern whole.
-      // the curl is divergence-free, so it stirs without piling up.
-      vec2 p = fieldPos(v_uv) * u_flow.w, h = vec2(0.02, 0.0);
-      vec2 g = vec2(fbm(p + h.xy) - fbm(p - h.xy), fbm(p + h.yx) - fbm(p - h.yx)) / (2.0 * h.x);
-      d = rot2(vec2(g.y, -g.x) / 1.2, u_flow.z);
-      float dl = length(d);
-      if (dl > 1.0) d /= dl;
-      mag = 1.0;
-    } else d = dirField(u_flow.x, u_flow.z, u_flow.w, v_uv, mag);
-    vec2 off = d * (mag * clamp(u_flow.y, -0.95, 0.95));     // texels
+  if (dot(abs(u_fl1), vec4(1.0)) + dot(abs(u_fl2), vec3(1.0)) > 0.0) {
+    vec2 off = flowAt(v_uv);                       // texels
     base = readSmooth(v_uv - off * u_texel, cell);
     if (cell.x < 1.0001 && cell.y < 1.0001) {
       vec2 a = abs(off);
@@ -1672,8 +1841,8 @@ const LIQUID_PARAMS = [
    band — see the sim shader. feature size only goes down: it is a damping of
    the diffusion weights, which the scheme is always stable in. */
 const MAP_PARAMS = [
-  { id: 'map_feed',  label: 'map feed',        min: 0.010, max: 0.110, step: 0.0001, value: 0.0367, dp: 4 },
-  { id: 'map_koff',  label: 'map kill vs k_c', min: -0.005, max: 0.008, step: 0.0001, value: 0.0058, dp: 4,
+  { id: 'map_feed',  label: 'map feed',        min: 0.010, max: 0.110, step: 0.0001, value: 0.0367, dp: 4, hidden: true },
+  { id: 'map_koff',  label: 'map kill vs k_c', min: -0.011, max: 0.012, hidden: true, step: 0.0001, value: 0.0058, dp: 4,
     fmt: v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(4) },
   { id: 'map_rate',  label: 'map speed',       min: 0.05,  max: 2.00,  step: 0.01,   value: 1.00,   dp: 2 },
   { id: 'map_size',  label: 'map feature size',min: 0.45,  max: 1.00,  step: 0.01,   value: 1.00,   dp: 2 },
@@ -1686,21 +1855,20 @@ const MAP_PARAMS = [
 /* flow, orientation and scale: three fields over the frame that steer the
    reaction. the type of each is a select (FX below); these are its knobs. */
 const deg = v => Math.round(v) + '°';
+const sgn = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(2);
+const bip = (id, label) => ({ id, label, min: -1, max: 1, step: 0.01, value: 0, dp: 2, bipolar: true, fmt: sgn });
 const FLOW_PARAMS = [
-  { id: 'fl_speed', label: 'flow speed',   min: -0.40, max: 0.40, step: 0.005, value: 0.08, dp: 3 },
-  { id: 'fl_turn',  label: 'flow turn',    min: -180,  max: 180,  step: 1,     value: 0,    dp: 0, fmt: deg },
-  { id: 'fl_freq',  label: 'noise scale',  min: 0.5,   max: 12.0, step: 0.1,   value: 3.0,  dp: 1 },
+  bip('fl_radial', 'flow radial'), bip('fl_rotate', 'flow rotate'), bip('fl_swirl', 'flow swirl'),
+  bip('fl_bubble', 'flow bubble'), bip('fl_ring', 'flow ring'), bip('fl_vortex', 'flow vortex'), bip('fl_vert', 'flow vertical'),
 ];
 const ORIENT_PARAMS = [
-  { id: 'or_amount', label: 'anisotropy',  min: 0.00, max: 0.95, step: 0.01, value: 0.70, dp: 2 },
-  { id: 'or_turn',   label: 'orient turn', min: -180, max: 180,  step: 1,    value: 0,    dp: 0, fmt: deg },
-  { id: 'or_freq',   label: 'noise scale', min: 0.5,  max: 12.0, step: 0.1,  value: 3.0,  dp: 1 },
+  bip('or_radial', 'orient radial'), bip('or_circles', 'orient circles'), bip('or_swirl', 'orient swirl'),
+  bip('or_bubble', 'orient bubble'), bip('or_linear', 'orient linear'),
 ];
 const SCALE_PARAMS = [
-  { id: 'sc_lo',    label: 'scale at black', min: 0.40, max: 3.00, step: 0.01, value: 0.60, dp: 2 },
-  { id: 'sc_hi',    label: 'scale at white', min: 0.40, max: 3.00, step: 0.01, value: 1.80, dp: 2 },
-  { id: 'sc_angle', label: 'gradient angle', min: -180, max: 180,  step: 1,    value: 0,    dp: 0, fmt: deg },
-  { id: 'sc_freq',  label: 'noise scale',    min: 0.5,  max: 12.0, step: 0.1,  value: 3.0,  dp: 1 },
+  { id: 'cellsize', label: 'scale', min: 0.60, max: 4.00, step: 0.02, value: 1.00, dp: 2 },
+  bip('sc_radial', 'scale radial'), bip('sc_random', 'scale random'), bip('sc_ring', 'scale ring'), bip('sc_map', 'scale by vary map'),
+  bip('speed', 'speed'),
 ];
 const DRAW_PARAMS = [
   { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0 },
@@ -1719,10 +1887,9 @@ const PROJECT_PARAMS = [
 const MODEL_PARAMS = {
   reaction: [
     { id: 'feed',   label: 'feed rate',     min: 0.010, max: 0.110, step: 0.0001, value: 0.0545, dp: 4 },
-    { id: 'kill',   label: 'kill rate',     min: 0.040, max: 0.075, step: 0.0001, value: 0.0620, dp: 4 },
+    { id: 'kill',   label: 'kill rate',     min: 0.025, max: 0.075, step: 0.0001, value: 0.0620, dp: 4 },
     { id: 'dA',     label: 'diffusion a',   min: 0.60,  max: 1.40,  step: 0.001,  value: 1.00,   dp: 3 },
     { id: 'dB',     label: 'diffusion b',   min: 0.15,  max: 0.80,  step: 0.001,  value: 0.50,   dp: 3 },
-    { id: 'cellsize', label: 'cell size',   min: 0.60,  max: 4.00,  step: 0.02,   value: 1.00,   dp: 2 },
     { id: 'biasX',  label: 'bias x',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2 },
     { id: 'biasY',  label: 'bias y',        min: -1.0,  max: 1.0,   step: 0.01,   value: 0.00,   dp: 2 },
     { id: 'dt',     label: 'timestep',      min: 0.40,  max: 1.30,  step: 0.01,   value: 1.00,   dp: 2 },
@@ -1768,17 +1935,21 @@ const paramById = {};
 function buildParamRows(list, container, clear) {
   if (clear) container.innerHTML = '';
   for (const d of list) {
+    if (d.hidden) continue;
     const wrap = document.createElement('div');
     wrap.className = 'param';
+    wrap.id = 'param-' + d.id;
     wrap.innerHTML =
-      '<div class="row1"><label for="in-' + d.id + '">' + d.label + '</label><span class="val" id="val-' + d.id + '"></span></div>' +
+      '<div class="row1"><label for="in-' + d.id + '">' + d.label + '</label><span class="val" id="val-' + d.id + '" title="click to type a value"></span></div>' +
       '<div class="row2">' +
-      '<input type="range" id="in-' + d.id + '" aria-describedby="val-' + d.id + '" min="' + pMin(d) + '" max="' + pMax(d) + '" step="' + d.step + '" value="' + P[d.id] + '">' +
+      '<input type="range"' + (d.bipolar ? ' class="bipolar"' : '') + ' id="in-' + d.id + '" aria-describedby="val-' + d.id + '" min="' + pMin(d) + '" max="' + pMax(d) + '" step="' + d.step + '" value="' + P[d.id] + '">' +
       '<button class="midibtn" id="midi-' + d.id + '" title="midi learn">m</button></div>';
     container.appendChild(wrap);
     const input = wrap.querySelector('input');
     input.title = 'double-click to reset to ' + d.value;
-    input.addEventListener('input', () => setParam(d.id, parseFloat(input.value), false));
+    input.addEventListener('input', e => setParam(d.id, snapZero(d, parseFloat(input.value)), false));
+    wrap.querySelector('.row1').insertBefore(pinButton(d.id), wrap.querySelector('.val'));
+    wrap.querySelector('.val').addEventListener('click', () => editValue(d.id, wrap.querySelector('.val')));
     // double-click snaps a slider back to the value it started at
     input.addEventListener('dblclick', () => setParam(d.id, d.value));
     wrap.querySelector('.midibtn').addEventListener('click', e => midiLearnToggle(d.id, e.altKey));
@@ -1798,7 +1969,9 @@ function setParam(id, value, updateSlider = true) {
   const slider = document.getElementById('in-' + id);
   if (updateSlider && slider) slider.value = value;
   refreshParamUI(id);
+  syncBound(id);
   if (id === 'feed' || id === 'kill') { markPresetCustom(); updateModelTag(); }
+  if ((id === 'feed' || id === 'kill' || id === 'map_feed' || id === 'map_koff') && typeof pm !== 'undefined') pmFollow();
   if (updateSlider === false && RENDER_PARAMS.some(r => r.id === id)) modelRenderTouched[id] = true;
   if (COLOR_PARAMS.some(c => c.id === id)) refreshRamp();
   if (LIQUID_PARAMS.some(c => c.id === id)) updateLiquidTag();
@@ -1969,8 +2142,9 @@ function buildPresets() {
   sel.addEventListener('change', () => {
     const p = presets[+sel.value];
     if (!p) return;
-    kOffset = p.kill - kCrit(p.feed);   // exact — retuneRanges widens to hold it
-    setParam('feed', p.feed); setParam('kill', p.kill);
+    // the ring glides there, so the example grows out of what is on screen;
+    // it lands exactly, since the map position round-trips to the same rates
+    pm.t1 = pmXY(p.feed, p.kill);
     sel.value = String(presets.indexOf(p));
   });
 }
@@ -1978,6 +2152,241 @@ function markPresetCustom() {
   const sel = document.getElementById('preset');
   const match = presets.findIndex(p => Math.abs(p.feed - P.feed) < 1e-6 && Math.abs(p.kill - P.kill) < 1e-6);
   sel.value = String(match);
+}
+
+/* ================================================================
+   pattern map — the (feed, kill) plane as a picture of itself
+   ------------------------------------------------------------------
+   a small field is solved once at startup with feed rising up it and
+   kill running across it, so every point of the map shows the pattern
+   those two rates grow. kill is not laid out raw: across the map it runs
+   over the live band at that feed (K_BAND, measured — see above) with a
+   margin of dead plane either side, so the whole width is useful and the
+   edges show where it stops — flooded to the left, empty to the right.
+   a ring on it picks the pattern; the field eases toward a new pick, so
+   a new pattern grows out of the old one. a second, gold ring picks the
+   pattern a vary shape lays across the frame (the vary map below).
+   ================================================================ */
+const PM_N = 288, PM_F0 = 0.010, PM_F1 = 0.110, PM_ML = 0.0028, PM_MR = 0.0016, PM_STEPS = 9000;
+const clamp01 = v => Math.min(1, Math.max(0, v));
+// map position (x across, y up, both 0..1) -> [feed, kill]
+function pmKF(x, y) {
+  const f = PM_F0 + (PM_F1 - PM_F0) * y, b = kBand(f);
+  const lo = b[0] - PM_ML, hi = b[1] + PM_MR;
+  return [f, kCrit(f) + lo + (hi - lo) * x];
+}
+function pmXY(f, k) {
+  const y = clamp01((f - PM_F0) / (PM_F1 - PM_F0));
+  const ff = PM_F0 + (PM_F1 - PM_F0) * y, b = kBand(ff);
+  const lo = b[0] - PM_ML, hi = b[1] + PM_MR;
+  return [clamp01((k - kCrit(ff) - lo) / (hi - lo)), y];
+}
+const PMAP_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+uniform vec2 u_texel;
+uniform vec3 u_band[6];   // feed, low and high (k - k_c) of the live band
+uniform float u_f0, u_f1, u_ml, u_mr, u_seed;
+in vec2 v_uv;
+out vec4 outColor;
+vec2 band(float f) {
+  if (f <= u_band[0].x) return u_band[0].yz;
+  for (int i = 1; i < 6; i++)
+    if (f <= u_band[i].x) return mix(u_band[i - 1].yz, u_band[i].yz, (f - u_band[i - 1].x) / (u_band[i].x - u_band[i - 1].x));
+  return u_band[5].yz;
+}
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7)) + u_seed) * 43758.5453); }
+vec2 at(vec2 o) { return texture(u_state, v_uv + o * u_texel).rg; }
+void main() {
+  if (u_seed > 0.0) {
+    // scattered specks, a few texels each, over the whole map
+    vec2 cell = floor(gl_FragCoord.xy / 5.0);
+    float h = hash(cell);
+    outColor = vec4(1.0, 0.0, 0.0, 1.0);
+    if (h > 0.86) outColor = vec4(0.5, 0.25 + 0.1 * h, 0.0, 1.0);
+    return;
+  }
+  float f = mix(u_f0, u_f1, v_uv.y);
+  vec2 b = band(f);
+  float k = sqrt(f) * 0.5 - f + mix(b.x - u_ml, b.y + u_mr, v_uv.x);
+  vec2 c = at(vec2(0.0));
+  vec2 lap = -c + 0.2 * (at(vec2(1, 0)) + at(vec2(-1, 0)) + at(vec2(0, 1)) + at(vec2(0, -1)))
+               + 0.05 * (at(vec2(1, 1)) + at(vec2(-1, 1)) + at(vec2(1, -1)) + at(vec2(-1, -1)));
+  float r = c.r * c.g * c.g;
+  // diffusion a little under the main solver's, so the map holds more features
+  vec2 n = c + vec2(0.62 * lap.r - r + f * (1.0 - c.r), 0.31 * lap.g + r - (k + f) * c.g);
+  outColor = vec4(clamp(n, 0.0, 1.0), 0.0, 1.0);
+}`;
+const PMAP_SHOW_FRAG = `#version 300 es
+precision highp float;
+uniform sampler2D u_state;
+in vec2 v_uv;
+out vec4 outColor;
+void main() {
+  float b = texture(u_state, v_uv).g;
+  float t = smoothstep(0.06, 0.32, b);
+  outColor = vec4(mix(vec3(0.075, 0.085, 0.10), vec3(0.80, 0.83, 0.86), t), 1.0);
+}`;
+const pmProg = program(PMAP_FRAG), pmShowProg = program(PMAP_SHOW_FRAG);
+var pm = {
+  fields: [makeTex(PM_N, PM_N, stateInternalFormat, gl.CLAMP_TO_EDGE), makeTex(PM_N, PM_N, stateInternalFormat, gl.CLAMP_TO_EDGE)],
+  show: makeTex(PM_N, PM_N, gl.RGBA8, gl.CLAMP_TO_EDGE),
+  cur: 0, done: 0, frame: 0,
+  c1: pmXY(P.feed, P.kill), t1: null, c2: pmXY(P.map_feed, kCrit(P.map_feed) + P.map_koff), t2: null,
+  vary: null, drag: 0, applying: false,
+};
+pm.t1 = pm.c1.slice(); pm.t2 = pm.c2.slice();
+const pmCtx = document.getElementById('pmap').getContext('2d');
+const pmPixels = new Uint8Array(PM_N * PM_N * 4);
+function pmPass(prog, dst, seed) {
+  gl.bindVertexArray(vao);
+  gl.viewport(0, 0, PM_N, PM_N);
+  gl.useProgram(prog.prog);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, pm.fields[pm.cur].tex);
+  gl.uniform1i(prog.u.u_state, 0);
+  if (prog === pmProg) {
+    gl.uniform2f(prog.u.u_texel, 1 / PM_N, 1 / PM_N);
+    gl.uniform3fv(prog.u.u_band, new Float32Array(K_BAND.flat()));
+    gl.uniform1f(prog.u.u_f0, PM_F0); gl.uniform1f(prog.u.u_f1, PM_F1);
+    gl.uniform1f(prog.u.u_ml, PM_ML); gl.uniform1f(prog.u.u_mr, PM_MR);
+    gl.uniform1f(prog.u.u_seed, seed || 0);
+  }
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function pmSeed() {
+  pm.cur = 1; pm.done = 0;   // read the other texture: never sample what is being drawn
+  pmPass(pmProg, pm.fields[0], 1 + Math.random() * 100);
+  pm.cur = 0;
+}
+// a few hundred steps a frame until the map has settled, then it is left alone
+function pmTick() {
+  if (pm.done >= PM_STEPS) return;
+  const n = Math.min(150, PM_STEPS - pm.done);
+  for (let i = 0; i < n; i++) { pmPass(pmProg, pm.fields[1 - pm.cur]); pm.cur = 1 - pm.cur; }
+  pm.done += n;
+  if (++pm.frame % 6 === 0 || pm.done >= PM_STEPS) pmDraw();
+}
+function pmDraw() {
+  pmPass(pmShowProg, pm.show);
+  gl.readPixels(0, 0, PM_N, PM_N, gl.RGBA, gl.UNSIGNED_BYTE, pmPixels);
+  const img = pmCtx.createImageData(PM_N, PM_N);
+  for (let y = 0; y < PM_N; y++)   // gl rows run bottom-up, the canvas top-down
+    img.data.set(pmPixels.subarray((PM_N - 1 - y) * PM_N * 4, (PM_N - y) * PM_N * 4), y * PM_N * 4);
+  pmCtx.putImageData(img, 0, 0);
+}
+const pmFmt = v => v.toFixed(4).replace(/^0/, '');
+function pmPlaceRings() {
+  const r1 = document.getElementById('pm-ring1'), r2 = document.getElementById('pm-ring2');
+  r1.style.left = (pm.c1[0] * 100) + '%'; r1.style.top = ((1 - pm.c1[1]) * 100) + '%';
+  r2.style.left = (pm.c2[0] * 100) + '%'; r2.style.top = ((1 - pm.c2[1]) * 100) + '%';
+  r2.hidden = !map.on;
+  const [f1, k1] = pmKF(pm.c1[0], pm.c1[1]), [f2, k2] = pmKF(pm.c2[0], pm.c2[1]);
+  document.getElementById('pm-read1').textContent = 'k ' + pmFmt(k1) + ' · f ' + pmFmt(f1);
+  document.getElementById('pm-read2').textContent = map.on ? 'k ' + pmFmt(k2) + ' · f ' + pmFmt(f2) : '';
+  document.getElementById('pm-wrap').setAttribute('aria-valuetext', 'feed ' + f1.toFixed(4) + ', kill ' + k1.toFixed(4));
+}
+// the rates follow the rings, eased, so the field morphs instead of jumping
+function pmAnimate() {
+  let moved = false;
+  for (const [c, t] of [[pm.c1, pm.t1], [pm.c2, pm.t2]]) {
+    const dx = t[0] - c[0], dy = t[1] - c[1];
+    if (Math.abs(dx) + Math.abs(dy) < 1e-5) continue;
+    const e = Math.hypot(dx, dy) < 0.002 ? 1 : 0.08;
+    c[0] += dx * e; c[1] += dy * e; moved = true;
+  }
+  if (!moved) return;
+  pm.applying = true;
+  const [f1, k1] = pmKF(pm.c1[0], pm.c1[1]), [f2, k2] = pmKF(pm.c2[0], pm.c2[1]);
+  kOffset = k1 - kCrit(f1);
+  setParam('feed', f1);
+  if (!coupled) setParam('kill', k1);
+  setParam('map_feed', f2);
+  setParam('map_koff', k2 - kCrit(f2));
+  pm.applying = false;
+  pmPlaceRings();
+}
+// anything else that sets the rates (a slider, an example, a preset file,
+// midi) moves the ring there at once
+function pmFollow() {
+  if (pm.applying) return;
+  pm.c1 = pmXY(P.feed, P.kill); pm.t1 = pm.c1.slice();
+  pm.c2 = pmXY(P.map_feed, kCrit(P.map_feed) + P.map_koff); pm.t2 = pm.c2.slice();
+  pmPlaceRings();
+}
+{
+  const wrap = document.getElementById('pm-wrap');
+  const at = e => {
+    const r = wrap.getBoundingClientRect();
+    return [clamp01((e.clientX - r.left) / r.width), clamp01(1 - (e.clientY - r.top) / r.height)];
+  };
+  wrap.addEventListener('pointerdown', e => {
+    const p = at(e);
+    // with two rings up, the nearer one is taken
+    pm.drag = (map.on && Math.hypot(p[0] - pm.t2[0], p[1] - pm.t2[1]) < Math.hypot(p[0] - pm.t1[0], p[1] - pm.t1[1])) ? 2 : 1;
+    (pm.drag === 2 ? pm.t2 : pm.t1).splice(0, 2, ...p);
+    wrap.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', e => { if (pm.drag) (pm.drag === 2 ? pm.t2 : pm.t1).splice(0, 2, ...at(e)); });
+  const up = () => { pm.drag = 0; };
+  wrap.addEventListener('pointerup', up);
+  wrap.addEventListener('pointercancel', up);
+  wrap.addEventListener('keydown', e => {
+    const d = e.shiftKey ? 0.05 : 0.01, t = e.altKey && map.on ? pm.t2 : pm.t1;
+    const k = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, d], ArrowDown: [0, -d] }[e.key];
+    if (!k) return;
+    t[0] = clamp01(t[0] + k[0]); t[1] = clamp01(t[1] + k[1]);
+    e.preventDefault(); e.stopPropagation();
+  });
+}
+
+/* vary pattern: a shape laid over the frame in the vary map — white takes
+   the gold ring's pattern, black the main ring's. the shapes are fills of
+   the same map the brush paints, so a shape can be painted over after. */
+function varyFill(kind) {
+  const w = mapCanvas.width, h = mapCanvas.height, cx = w / 2, cy = h / 2;
+  let g;
+  if (kind === 'radial') {
+    g = mctx.createRadialGradient(cx, cy, 0, cx, cy, Math.hypot(w, h) * 0.42);
+    g.addColorStop(0, '#fff'); g.addColorStop(0.25, '#fff'); g.addColorStop(1, '#000');
+  } else if (kind === 'ring') {
+    const r = Math.min(w, h);
+    g = mctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.62);
+    g.addColorStop(0, '#000'); g.addColorStop(0.32, '#000'); g.addColorStop(0.55, '#fff');
+    g.addColorStop(0.78, '#000'); g.addColorStop(1, '#000');
+  } else if (kind === 'horiz') {
+    g = mctx.createLinearGradient(w * 0.12, 0, w * 0.88, 0);
+    g.addColorStop(0, '#000'); g.addColorStop(1, '#fff');
+  } else if (kind === 'vert') {
+    g = mctx.createLinearGradient(0, h * 0.88, 0, h * 0.12);
+    g.addColorStop(0, '#000'); g.addColorStop(1, '#fff');
+  } else if (kind === 'random') { mapNoise(); return; }
+  if (g) { mctx.fillStyle = g; mctx.fillRect(0, 0, w, h); mapTouched(); }
+}
+function setVary(kind) {
+  if (kind && kind === pm.vary) kind = null;          // pressing the lit one drops it
+  pm.vary = kind;
+  if (kind && kind !== 'custom') { varyFilling = true; varyFill(kind); varyFilling = false; }
+  if (kind === 'custom' && !map.used) { pm.vary = null; selectTarget('map'); revealSection('sec-map'); }
+  setMapOn(!!pm.vary);
+  syncVaryButtons();
+}
+function syncVaryButtons() {
+  document.querySelectorAll('#vary .vary').forEach(b => {
+    b.classList.toggle('active', !!map.on && b.dataset.vary === pm.vary);
+    b.setAttribute('aria-pressed', String(!!map.on && b.dataset.vary === pm.vary));
+  });
+  pmPlaceRings();
+}
+document.querySelectorAll('#vary .vary').forEach(b => b.addEventListener('click', () => setVary(b.dataset.vary)));
+// unfold a section and bring it into view
+function revealSection(id) {
+  const sec = document.getElementById(id);
+  if (!sec) return;
+  if (sec.classList.contains('collapsed') && typeof setFold === 'function') setFold(sec, false);
+  sec.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 /* ---------------- palettes ---------------- */
@@ -2283,8 +2692,12 @@ function selectModel(name) {
   currentModel = name;
   const m = MODELS[name];
   applyModelRender(m);
-  buildParamRows(MODEL_PARAMS[name], document.getElementById('params-model'), true);
-  document.getElementById('reaction-extra').style.display = name === 'reaction' ? '' : 'none';
+  const rd = name === 'reaction';
+  buildParamRows(rd ? [] : MODEL_PARAMS[name], document.getElementById('params-model'), true);
+  buildParamRows(rd ? MODEL_PARAMS.reaction : [], document.getElementById('params-solver'), true);
+  document.getElementById('sec-solver').style.display = rd ? '' : 'none';
+  document.getElementById('generative-extra').hidden = rd;
+  document.getElementById('reaction-extra').style.display = rd ? '' : 'none';
   if (name === 'reaction') retuneRanges();
   document.getElementById('preset').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('sec-draw').style.display = (name === 'reaction' && !project.on) ? '' : 'none';
@@ -2293,7 +2706,8 @@ function selectModel(name) {
     document.getElementById(id).style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('row-reaction').style.display = name === 'reaction' ? '' : 'none';
   document.getElementById('row-generative').style.display = name === 'reaction' ? 'none' : '';
-  document.getElementById('model-note').textContent = m.note || '';
+  document.getElementById('model-note').textContent = rd ? '' : (m.note || '');
+  document.getElementById('solver-note').textContent = rd ? (m.note || '') : '';
   document.getElementById('model').value = name;
   document.getElementById('subtitle').textContent =
     name === 'reaction' ? 'gray–scott reaction–diffusion' : m.label;
@@ -3128,10 +3542,13 @@ const mapShown = () => map.show || (draw.target === 'map' && currentModel === 'r
 
 function setMapOn(v) {
   map.on = v;
+  if (!v) pm.vary = null;
+  else if (!pm.vary) pm.vary = 'custom';
   const b = document.getElementById('btn-mapon');
   b.textContent = 'map: ' + (v ? 'on' : 'off');
   b.classList.toggle('primary', v);
   updateMapTag();
+  syncVaryButtons();
 }
 function setMapShow(v) {
   map.show = v;
@@ -3150,8 +3567,10 @@ function updateMapTag() {
 // never what was meant
 function mapTouched() {
   map.used = true; map.dirty = true;
-  if (!map.on) setMapOn(true);
+  if (!varyFilling) pm.vary = 'custom';
+  if (!map.on) setMapOn(true); else syncVaryButtons();
 }
+let varyFilling = false;
 
 // sim px -> map px; the canvas is y-down, the field y-up
 const toMap = px => [px[0] / simW * mapCanvas.width, (1 - px[1] / simH) * mapCanvas.height];
@@ -3294,37 +3713,6 @@ function loadMapData(src) {
     map.used = true; map.dirty = true;
   };
   img.src = src;
-}
-
-/* ================================================================
-   flow, orientation and scale — the type of each field. 0 is off; the
-   numbers are what the sim shader switches on.
-   ================================================================ */
-const FX = { flow: 0, orient: 0, scale: 0 };
-const FX_TYPES = {
-  flow:   [['off', 0], ['uniform', 1], ['radial', 2], ['circular', 3], ['turbulent', 4], ['along map contours', 5]],
-  orient: [['off', 0], ['uniform', 1], ['radial', 2], ['circular', 3], ['noise', 4], ['along map contours', 5]],
-  scale:  [['off', 0], ['linear gradient', 1], ['radial', 2], ['noise', 3], ['pattern map', 4]],
-};
-function setFx(kind, v) {
-  v = Math.round(v);
-  if (!FX_TYPES[kind].some(t => t[1] === v)) v = 0;
-  FX[kind] = v;
-  const sel = document.getElementById('fx-' + kind);
-  if (sel) sel.value = String(v);
-  const body = document.getElementById('params-' + kind);
-  if (body) body.style.display = v ? '' : 'none';
-  const tag = document.getElementById(kind + '-tag');
-  if (tag) tag.textContent = v ? FX_TYPES[kind].find(t => t[1] === v)[0] : '';
-}
-for (const kind of Object.keys(FX)) {
-  const sel = document.getElementById('fx-' + kind);
-  for (const [label, v] of FX_TYPES[kind]) {
-    const o = document.createElement('option');
-    o.value = String(v); o.textContent = label;
-    sel.appendChild(o);
-  }
-  sel.addEventListener('change', () => setFx(kind, parseInt(sel.value, 10)));
 }
 
 document.querySelectorAll('#targets .tool').forEach(btn => {
@@ -3675,7 +4063,6 @@ function collectConfig() {
     projection: { on: project.on, surface: project.surface, shape: project.shape, mode: project.mode },
     view: { yaw: orbit.yaw, pitch: orbit.pitch, dist: orbit.dist },
     map: { on: map.on, image: map.used ? mapCanvas.toDataURL('image/png') : null },
-    fields: Object.assign({}, FX),
   };
 }
 
@@ -3749,9 +4136,10 @@ function applyConfig(cfg) {
     if (typeof mp.image === 'string' && mp.image.startsWith('data:image/')) loadMapData(mp.image);
     setMapOn(!!mp.on);
   }
-  // flow, orientation and scale are off in a file saved before they existed
-  const fx = (cfg.fields && typeof cfg.fields === 'object') ? cfg.fields : {};
-  for (const kind of Object.keys(FX)) setFx(kind, isFinite(fx[kind]) ? fx[kind] : 0);
+  // flow, orientation and scale are params: a file saved before they existed
+  // leaves them where they were, so put them back to zero first
+  if (!cfg.params || !('fl_radial' in cfg.params))
+    [...FLOW_PARAMS, ...ORIENT_PARAMS, ...SCALE_PARAMS].forEach(d => { if (d.bipolar) setParam(d.id, 0); });
   markPresetCustom();
   updateModelTag();
 }
@@ -3830,17 +4218,17 @@ function step() {
   gl.uniform1f(simProg.u.u_rate2, P.map_rate);
   gl.uniform1f(simProg.u.u_size2, P.map_size);
   gl.uniform1f(simProg.u.u_dtcap, 1.15 / Math.max(P.dA, P.dB));
-  const rad = Math.PI / 180;
-  gl.uniform4f(simProg.u.u_flow, FX.flow, P.fl_speed, P.fl_turn * rad, P.fl_freq);
-  gl.uniform4f(simProg.u.u_orient, FX.orient, P.or_amount, P.or_turn * rad, P.or_freq);
-  gl.uniform4f(simProg.u.u_scale, FX.scale, P.sc_lo, P.sc_hi, P.sc_freq);
-  gl.uniform1f(simProg.u.u_scangle, P.sc_angle * rad);
+  gl.uniform4f(simProg.u.u_fl1, P.fl_radial, P.fl_rotate, P.fl_swirl, P.fl_bubble);
+  gl.uniform3f(simProg.u.u_fl2, P.fl_ring, P.fl_vortex, P.fl_vert);
+  gl.uniform4f(simProg.u.u_or1, P.or_radial, P.or_circles, P.or_swirl, P.or_bubble);
+  gl.uniform1f(simProg.u.u_or2, P.or_linear);
+  gl.uniform4f(simProg.u.u_sc, P.sc_radial, P.sc_random, P.sc_ring, P.sc_map);
   gl.activeTexture(gl.TEXTURE3);
   gl.bindTexture(gl.TEXTURE_2D, mapTex);
   gl.uniform1i(simProg.u.u_map, 3);
   setSurfaceUniforms(simProg);
   gl.activeTexture(gl.TEXTURE0);
-  const n = Math.round(P.steps);
+  const n = simSteps();
   for (let i = 0; i < n; i++) {
     const src = fields[cur], dst = fields[1 - cur];
     gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
@@ -3850,6 +4238,8 @@ function step() {
   }
 }
 
+// speed scales the steps per frame, two octaves either way
+const simSteps = () => Math.max(1, Math.min(120, Math.round(P.steps * Math.pow(2, 2 * P.speed))));
 function setFieldFx(prog) {
   gl.uniform1f(prog.u.u_time, simTime);
   gl.uniform1f(prog.u.u_liquid, P.lq_amount);
@@ -3896,6 +4286,8 @@ function render() {
 
 function frame() {
   uploadMap();
+  pmTick();
+  pmAnimate();
   if (!paused) simTime += 0.016;
   if (!paused && P.col_cycle > 0) { rampPhase += P.col_cycle * 0.0022; refreshRamp(); }
   if (!paused && !orbit.dragging && orbitActive()) {
@@ -3914,7 +4306,7 @@ function frame() {
     fps = Math.round(frames * 1000 / (now - lastFpsT));
     frames = 0; lastFpsT = now;
     const detail = (currentModel === 'reaction'
-      ? '<span class="k">' + Math.round(fps * P.steps) + '</span> steps/s'
+      ? '<span class="k">' + Math.round(fps * simSteps()) + '</span> steps/s'
       : '<span class="k">' + MODELS[currentModel].label + '</span>')
       + (project.on ? ' · ' + (surfaceOn() ? 'grown on' : 'projected on') +
          ' <span class="k">' + SHAPES[project.shape].label + '</span>' : '');
@@ -3970,6 +4362,7 @@ document.getElementById('btn-smooth').addEventListener('click', () => {
 });
 document.getElementById('simscale').addEventListener('change', () => allocSim(true));
 document.getElementById('btn-couple').addEventListener('click', () => setCoupled(!coupled));
+document.getElementById('btn-backrd').addEventListener('click', () => selectModel('reaction'));
 document.getElementById('btn-project').addEventListener('click', () => setProject(!project.on));
 document.getElementById('btn-surface').addEventListener('click', () => setSurface(!project.surface));
 document.getElementById('projshape').addEventListener('change', e => {
@@ -4000,6 +4393,332 @@ window.addEventListener('keydown', e => {
   }
 });
 
+/* ================================================================
+   panel chrome — folding sections, the search palette, pins, typed values
+   ------------------------------------------------------------------
+   the same conventions as the lissa and modal cymatics panels: every
+   section folds from its title (remembered per browser), / or ctrl-k
+   opens a search over every control with the control itself inline, a
+   star pins a slider to a dock on the canvas, and a value can be typed by
+   clicking it. the search also runs commands — "models" lists the other
+   pattern models, which are otherwise kept out of the panel.
+   ================================================================ */
+const UI_KEY = 'reacdiff.ui';
+const ui = (() => { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch (e) { return {}; } })();
+const saveUi = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (e) {} };
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function setFold(sec, collapsed) {
+  sec.classList.toggle('collapsed', collapsed);
+  const h = sec.querySelector(':scope > h2');
+  if (h) h.setAttribute('aria-expanded', String(!collapsed));
+  (ui.folds = ui.folds || {})[sec.id] = collapsed;
+  saveUi();
+}
+document.querySelectorAll('#panel .section[id]').forEach(sec => {
+  if (ui.folds && typeof ui.folds[sec.id] === 'boolean') sec.classList.toggle('collapsed', ui.folds[sec.id]);
+  const h = sec.querySelector(':scope > h2');
+  if (!h) return;
+  h.setAttribute('role', 'button');
+  h.setAttribute('tabindex', '0');
+  h.setAttribute('aria-expanded', String(!sec.classList.contains('collapsed')));
+  h.addEventListener('click', e => {
+    const opening = sec.classList.contains('collapsed');
+    // alt-click opens this one and folds every other
+    if (opening && e.altKey) document.querySelectorAll('#panel .section[id]').forEach(o => { if (o !== sec) setFold(o, true); });
+    setFold(sec, !opening);
+  });
+  h.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault(); e.stopPropagation();   // space would otherwise pause
+    setFold(sec, !sec.classList.contains('collapsed'));
+  });
+});
+function revealControl(el) {
+  if (!el) return;
+  if (document.body.classList.contains('panel-hidden')) togglePanel();
+  const sec = el.closest('.section');
+  if (sec && sec.classList.contains('collapsed')) setFold(sec, false);
+  const row = el.closest('.param, .toolrow, .btnrow, .vary-row, #pm-wrap') || el;
+  row.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  row.classList.remove('flash-find'); void row.offsetWidth; row.classList.add('flash-find');
+  setTimeout(() => row.classList.remove('flash-find'), 1600);
+  const f = el.matches('input, select, button') ? el : (row.querySelector('input[type=range], select:not([hidden]), button') || el);
+  try { f.focus({ preventScroll: true }); } catch (e) {}
+}
+
+/* ---- sliders anywhere: the dock and the search build live copies ---- */
+const bound = {};          // param id -> Set of { el, val }
+function syncBound(id) {
+  const set = bound[id];
+  if (!set) return;
+  const d = paramById[id];
+  for (const b of set) {
+    if (!b.el.isConnected) { set.delete(b); continue; }
+    if (document.activeElement !== b.el) { b.el.min = pMin(d); b.el.max = pMax(d); b.el.value = P[id]; }
+    if (b.val) b.val.textContent = d.fmt ? d.fmt(P[id]) : P[id].toFixed(d.dp);
+  }
+}
+function makeControl(id, valEl) {
+  const d = paramById[id];
+  const el = document.createElement('input');
+  el.type = 'range'; el.min = pMin(d); el.max = pMax(d); el.step = d.step; el.value = P[id];
+  if (d.bipolar) el.className = 'bipolar';
+  el.setAttribute('aria-label', d.label);
+  el.addEventListener('input', () => setParam(id, snapZero(d, parseFloat(el.value)), false));
+  el.addEventListener('dblclick', () => setParam(id, d.value));
+  (bound[id] = bound[id] || new Set()).add({ el, val: valEl });
+  // not on the page yet, so not through syncBound, which drops detached ones
+  if (valEl) valEl.textContent = d.fmt ? d.fmt(P[id]) : P[id].toFixed(d.dp);
+  return el;
+}
+// a centred slider catches on zero as it passes; hold ctrl to slide through
+let ctrlHeld = false;
+window.addEventListener('keydown', e => { if (e.key === 'Control') ctrlHeld = true; });
+window.addEventListener('keyup', e => { if (e.key === 'Control') ctrlHeld = false; });
+function snapZero(d, v) {
+  if (!d.bipolar || ctrlHeld) return v;
+  return Math.abs(v) < 0.035 * (d.max - d.min) / 2 ? 0 : v;
+}
+// click a readout to type a value
+function editValue(id, span) {
+  const d = paramById[id];
+  if (span.querySelector('input')) return;
+  const inp = document.createElement('input');
+  inp.className = 'val-edit'; inp.type = 'text'; inp.value = P[id];
+  inp.setAttribute('aria-label', d.label);
+  span.textContent = ''; span.appendChild(inp);
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = ok => {
+    if (done) return; done = true;
+    const v = parseFloat(inp.value);
+    inp.remove();
+    if (ok && isFinite(v)) setParam(id, v); else refreshParamUI(id);
+  };
+  inp.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  inp.addEventListener('blur', () => finish(true));
+}
+
+/* ---- pins and the dock ---- */
+const PIN_MAX = 8;
+let pinned = (Array.isArray(ui.pins) ? ui.pins : []).filter(k => paramById[k]).slice(0, PIN_MAX);
+const dockEl = document.getElementById('pin-dock');
+function pinButton(id) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'pin-btn'; b.dataset.pin = id;
+  b.title = 'pin to the canvas';
+  b.setAttribute('aria-label', 'pin ' + paramById[id].label + ' to the canvas');
+  b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); togglePin(id); });
+  paintPin(b);
+  return b;
+}
+function paintPin(b) {
+  const on = pinned.includes(b.dataset.pin);
+  b.textContent = on ? '★' : '☆';
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+function togglePin(id) {
+  const i = pinned.indexOf(id);
+  if (i >= 0) pinned.splice(i, 1);
+  else { if (pinned.length >= PIN_MAX) pinned.shift(); pinned.push(id); }
+  setPins(pinned);
+}
+function setPins(keys) {
+  pinned = keys.filter(k => paramById[k]).slice(0, PIN_MAX);
+  ui.pins = pinned.slice(); saveUi();
+  document.querySelectorAll('.pin-btn').forEach(paintPin);
+  renderDock();
+}
+function renderDock() {
+  dockEl.textContent = '';
+  pinned.forEach(id => {
+    const d = paramById[id];
+    const w = document.createElement('div');
+    w.className = 'dk';
+    w.innerHTML = '<div class="dk-h"><span>' + esc(d.label) + '</span><span class="dk-v"></span></div>';
+    const x = document.createElement('button');
+    x.type = 'button'; x.className = 'dk-x'; x.textContent = '✕';
+    x.title = 'unpin'; x.setAttribute('aria-label', 'unpin ' + d.label);
+    x.addEventListener('click', () => togglePin(id));
+    w.querySelector('.dk-h').appendChild(x);
+    w.appendChild(makeControl(id, w.querySelector('.dk-v')));
+    dockEl.appendChild(w);
+  });
+  dockEl.hidden = !pinned.length;
+}
+
+/* ---- the search palette, and the commands it runs ---- */
+// params that belong to what is on screen: the current model's, and every
+// shared list. the reaction's own list only while it is the model.
+function liveParamIds() {
+  const lists = [MAP_PARAMS, SCALE_PARAMS, FLOW_PARAMS, ORIENT_PARAMS, RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, MODEL_PARAMS[currentModel]];
+  const out = [];
+  lists.forEach(l => l.forEach(d => { if (!d.hidden && document.getElementById('in-' + d.id)) out.push(d.id); }));
+  return out;
+}
+const COMMANDS = {
+  models: {
+    hint: 'pattern models',
+    rows: () => Object.keys(MODELS).map(k => ({
+      name: MODELS[k].label + (k === currentModel ? '  ·  current' : ''), where: 'model',
+      run: () => { selectModel(k); revealControl(document.getElementById('sec-model').querySelector('h2')); },
+    })),
+  },
+  examples: {
+    hint: 'example patterns',
+    rows: () => presets.map((p, i) => ({
+      name: p.name, where: 'example',
+      run: () => {
+        if (currentModel !== 'reaction') selectModel('reaction');
+        const sel = document.getElementById('preset');
+        sel.value = String(i); sel.dispatchEvent(new Event('change'));
+      },
+    })),
+  },
+};
+const CMD_ALIAS = { model: 'models', presets: 'examples', preset: 'examples', example: 'examples' };
+const SYN = {
+  colour: 'palette', color: 'palette', size: 'scale', speed: 'speed', rate: 'feed', direction: 'orient',
+  stripes: 'orient', anisotropy: 'orient', advect: 'flow', wind: 'flow', zoom: 'camera', relief: 'relief',
+};
+const psEl = document.getElementById('param-search'), psInput = document.getElementById('ps-input');
+const psList = document.getElementById('ps-results');
+let psIndex = [], psHits = [], psSel = 0, psReturn = null;
+const whereOf = el => {
+  const sec = el && el.closest('.section');
+  const h = sec && sec.querySelector(':scope > h2');
+  return h ? [...h.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('').trim().toLowerCase() : '';
+};
+function buildIndex() {
+  const out = [], seen = new Set();
+  liveParamIds().forEach(id => {
+    const el = document.getElementById('in-' + id);
+    out.push({ key: id, name: paramById[id].label, el, where: whereOf(el) });
+    seen.add(el);
+  });
+  document.querySelectorAll('#panel select[aria-label]:not([hidden])').forEach(el => {
+    if (el.offsetParent === null && !el.closest('.collapsed')) return;
+    out.push({ key: null, name: el.getAttribute('aria-label').toLowerCase(), el, where: whereOf(el) });
+  });
+  document.querySelectorAll('#panel button.act, #panel button.tool, #panel button.vary').forEach(el => {
+    if (seen.has(el)) return;
+    if (el.closest('[hidden]') || (el.offsetParent === null && !el.closest('.collapsed'))) return;
+    const name = (el.getAttribute('aria-label') || el.textContent).replace(/\s+/g, ' ').trim();
+    if (name) out.push({ key: null, name, el, where: whereOf(el) });
+  });
+  document.querySelectorAll('#panel .section > h2').forEach(h => {
+    if (h.parentElement.style.display === 'none') return;
+    const name = whereOf(h);
+    if (name) out.push({ key: null, name, el: h, where: 'section', heading: true });
+  });
+  Object.keys(COMMANDS).forEach(c => out.push({ key: null, name: c, cmd: c, where: 'command · ' + COMMANDS[c].hint }));
+  return out;
+}
+function psRender() {
+  const q = psInput.value.trim().toLowerCase();
+  const cmd = COMMANDS[q] ? q : CMD_ALIAS[q];
+  if (cmd) {
+    psHits = COMMANDS[cmd].rows();
+  } else {
+    const terms = q ? [q, SYN[q]].filter(Boolean) : [];
+    const score = it => {
+      const n = it.name.toLowerCase(), w = it.where.toLowerCase();
+      let best = -1;
+      terms.forEach(t => {
+        if (n.startsWith(t)) best = Math.max(best, 3);
+        else if (n.split(/[^a-z0-9]+/).some(p => p.startsWith(t))) best = Math.max(best, 2);
+        else if (n.includes(t)) best = Math.max(best, 1);
+        else if (w.includes(t)) best = Math.max(best, 0);
+      });
+      return best;
+    };
+    if (terms.length) {
+      psHits = psIndex.map(it => [it, score(it) + (it.key ? 0.5 : 0) - (it.heading ? 0.25 : 0) + (it.cmd ? 0.4 : 0)])
+        .filter(([, sc]) => sc >= 0).sort((a, b) => b[1] - a[1]).map(([it]) => it).slice(0, 14);
+    } else {
+      const pins = pinned.map(k => psIndex.find(it => it.key === k)).filter(Boolean);
+      psHits = (pins.length ? pins : psIndex.filter(it => it.key).slice(0, 6))
+        .concat(psIndex.filter(it => it.cmd));
+    }
+  }
+  psSel = Math.min(psSel, Math.max(0, psHits.length - 1));
+  psList.textContent = '';
+  if (!psHits.length) {
+    psList.innerHTML = '<div class="ps-empty">nothing matches. try a section name (flow, scale) or a command: models, examples.</div>';
+    psInput.removeAttribute('aria-activedescendant');
+    return;
+  }
+  psHits.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'ps-row'; row.id = 'ps-opt-' + i;
+    row.setAttribute('role', 'option');
+    const t = q && !cmd && it.name.toLowerCase().includes(q) ? q : null;
+    const at = t ? it.name.toLowerCase().indexOf(t) : -1;
+    const name = at >= 0 ? esc(it.name.slice(0, at)) + '<mark>' + esc(it.name.slice(at, at + t.length)) + '</mark>' + esc(it.name.slice(at + t.length)) : esc(it.name);
+    row.innerHTML = '<span class="ps-name">' + name + '</span><span class="ps-where">' + esc(it.where || '') + '</span><span class="ps-val"></span>';
+    if (it.key) {
+      const c = document.createElement('div');
+      c.className = 'ps-ctl';
+      c.appendChild(makeControl(it.key, row.querySelector('.ps-val')));
+      c.appendChild(pinButton(it.key));
+      row.appendChild(c);
+    }
+    row.addEventListener('mouseenter', () => { psSel = i; psMark(); });
+    row.addEventListener('click', e => { if (!e.target.closest('input, button')) psGo(i); });
+    psList.appendChild(row);
+  });
+  psMark();
+}
+function psMark() {
+  psList.querySelectorAll('.ps-row').forEach((r, i) => { r.classList.toggle('sel', i === psSel); r.setAttribute('aria-selected', String(i === psSel)); });
+  const cur = document.getElementById('ps-opt-' + psSel);
+  if (cur) { psInput.setAttribute('aria-activedescendant', cur.id); cur.scrollIntoView({ block: 'nearest' }); }
+}
+function psGo(i) {
+  const it = psHits[i];
+  if (!it) return;
+  if (it.cmd) { psInput.value = it.cmd; psSel = 0; psRender(); return; }   // a command opens its list
+  psClose(false);
+  if (it.run) it.run(); else revealControl(it.el);
+}
+function psOpen() {
+  psIndex = buildIndex();
+  psReturn = document.activeElement;
+  psEl.hidden = false;
+  psInput.value = ''; psSel = 0;
+  psRender();
+  psInput.focus();
+}
+function psClose(restore) {
+  psEl.hidden = true;
+  psList.textContent = '';
+  if (restore !== false && psReturn && psReturn.focus) try { psReturn.focus(); } catch (e) {}
+}
+psInput.addEventListener('input', () => { psSel = 0; psRender(); });
+psInput.addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'ArrowDown') { psSel = Math.min(psHits.length - 1, psSel + 1); psMark(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { psSel = Math.max(0, psSel - 1); psMark(); e.preventDefault(); }
+  else if (e.key === 'Enter') { psGo(psSel); e.preventDefault(); }
+  else if (e.key === 'Escape') { psClose(); e.preventDefault(); }
+});
+psEl.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { psClose(); e.preventDefault(); } });
+psEl.addEventListener('mousedown', e => { if (e.target === psEl) psClose(); });
+document.getElementById('findtoggle').addEventListener('click', psOpen);
+window.addEventListener('keydown', e => {
+  const typing = e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA';
+  if ((e.key === '/' && !e.ctrlKey && !e.metaKey && !typing) || ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K'))) {
+    if (!psEl.hidden) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    psOpen();
+  }
+}, true);
+
 /* ---------------- boot ---------------- */
 buildParamRows(COLOR_PARAMS, document.getElementById('params-color'), false);
 buildParamRows(LIQUID_PARAMS, document.getElementById('params-liquid'), false);
@@ -4009,12 +4728,14 @@ buildParamRows(MAP_PARAMS, document.getElementById('params-map'), false);
 buildParamRows(FLOW_PARAMS, document.getElementById('params-flow'), false);
 buildParamRows(ORIENT_PARAMS, document.getElementById('params-orient'), false);
 buildParamRows(SCALE_PARAMS, document.getElementById('params-scale'), false);
-for (const kind of Object.keys(FX)) setFx(kind, 0);
 buildParamRows(PROJECT_PARAMS, document.getElementById('params-project'), false);
 buildPresets();
 buildPaletteUI();
 selectModel('reaction');
 setCoupled(true);
+pmSeed();
+pmPlaceRings();
+renderDock();
 markPresetCustom();
 initMidi();
 resize();
