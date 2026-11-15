@@ -477,25 +477,28 @@
     <div id="reaction-extra">
       <div id="pm-wrap" role="slider" tabindex="0" aria-label="Pattern map: feed rate rises up the map, kill rate across it. Click or drag to pick a pattern; arrow keys nudge it."
            aria-valuetext="">
-        <canvas id="pmap" width="256" height="256"></canvas>
+        <canvas id="pmap" width="512" height="512"></canvas>
         <div class="pm-ring" id="pm-ring1"></div>
         <div class="pm-ring two" id="pm-ring2" hidden></div>
         <span class="pm-ax pm-ax-f">feed ↑</span><span class="pm-ax pm-ax-k">kill →</span>
       </div>
       <div class="pm-read"><span id="pm-read1"></span><span id="pm-read2"></span></div>
-      <div class="sublabel" style="margin-top:10px">vary pattern</div>
-      <div class="vary-row" id="vary" role="group" aria-label="Vary the pattern across the frame">
-        <button class="vary" data-vary="radial" title="radial — the second pattern in the centre" aria-label="vary radially"><i class="vi vi-radial"></i></button>
-        <button class="vary" data-vary="random" title="random — blobs of the second pattern" aria-label="vary randomly"><i class="vi vi-random"></i></button>
-        <button class="vary" data-vary="ring" title="ring — the second pattern on a ring" aria-label="vary on a ring"><i class="vi vi-ring"></i></button>
-        <button class="vary" data-vary="horiz" title="horizontal — the second pattern to the right" aria-label="vary horizontally"><i class="vi vi-horiz"></i></button>
-        <button class="vary" data-vary="vert" title="vertical — the second pattern at the top" aria-label="vary vertically"><i class="vi vi-vert"></i></button>
-        <button class="vary" data-vary="custom" title="painted or imported — see the vary map section" aria-label="painted vary map"><i class="vi vi-custom"></i></button>
+      <div class="sublabel" style="margin-top:10px">gradient maps</div>
+      <div class="vary-row" id="vary" role="group" aria-label="Gradient maps: lay a second pattern across the frame">
+        <button class="vary" data-vary="radial" title="radial — the second pattern in the centre" aria-label="radial gradient map"><i class="vi vi-radial"></i></button>
+        <button class="vary" data-vary="random" title="random — blobs of the second pattern" aria-label="random gradient map"><i class="vi vi-random"></i></button>
+        <button class="vary" data-vary="ring" title="ring — the second pattern on a ring" aria-label="ring gradient map"><i class="vi vi-ring"></i></button>
+        <button class="vary" data-vary="horiz" title="horizontal — the second pattern to the right" aria-label="horizontal gradient map"><i class="vi vi-horiz"></i></button>
+        <button class="vary" data-vary="vert" title="vertical — the second pattern at the top" aria-label="vertical gradient map"><i class="vi vi-vert"></i></button>
+        <button class="vary" data-vary="custom" title="custom — painted or imported, see the custom gradient map section" aria-label="custom gradient map"><i class="vi vi-custom"></i></button>
       </div>
-      <div class="hint" style="margin:8px 0 10px">
+      <div id="params-grad" style="margin-top:10px"></div>
+      <div class="hint" style="margin:2px 0 10px">
         drag the <b>ring</b> to pick a pattern — it grows out of the one before. a
-        <b>vary</b> button lays a second pattern across the frame: drag the <b>gold ring</b>
-        to choose it. press the lit button again to drop it.
+        <b>gradient map</b> lays a second pattern across the frame: drag the <b>gold ring</b>
+        to choose it. press the lit button again to drop it. <b>edge hardness</b> runs
+        the change from a slow blend to a sharp border; <b>edge position</b> moves the
+        border toward one pattern or the other.
       </div>
       <select aria-label="Example patterns" id="preset"></select>
     </div>
@@ -563,12 +566,12 @@
     <div class="hint" style="margin-top:10px">
       draw while <b>paused</b> to sketch a seed without running the reaction. shapes: drag to size.
       hold <b>shift</b> to erase. imported svg is stamped as chemical B.
-      <b>paint map</b> sends the same tools to the parameter map below instead.
+      <b>paint map</b> sends the same tools to the custom gradient map instead.
     </div>
   </div>
 
   <div class="section collapsed" id="sec-map">
-    <h2>Vary map <span class="tag" id="map-tag"></span></h2>
+    <h2>Custom gradient map <span class="tag" id="map-tag"></span></h2>
     <div class="btnrow" style="margin-bottom:10px">
       <button class="act" id="btn-mapon">map: off</button>
       <button class="act" id="btn-mapshow">show map: off</button>
@@ -585,13 +588,14 @@
       <button class="act" id="btn-mapinvert">invert</button>
       <button class="act" id="btn-mapclear">clear</button>
     </div>
-    <input aria-label="Import an image as the parameter map" type="file" id="mapfile" accept="image/*" style="display:none">
+    <input aria-label="Import an image as the custom gradient map" type="file" id="mapfile" accept="image/*" style="display:none">
     <div class="hint" style="margin-top:10px">
-      the greyscale map behind <b>vary pattern</b>. black grows the main ring's
+      the greyscale map behind the <b>gradient maps</b>. black grows the main ring's
       pattern, white the gold ring's, grey the blend between them — and white also
-      takes the <b>map speed</b> and <b>map feature size</b> below. the vary buttons
-      fill it with a shape; paint over it with <b>paint map</b> in the draw section,
-      or load an image. painting or importing lights the last vary button.<br><br>
+      takes the <b>map speed</b> and <b>map feature size</b> below. the gradient map
+      buttons fill it with a shape; paint over it with <b>paint map</b> in the draw
+      section, or load an image. painting or importing lights the <b>custom</b>
+      button.<br><br>
       <b>import image</b> loads a photo as the map — dark areas take the map
       regime, contrast is stretched to the full range. <b>invert</b> swaps them.
       <b>gradient</b> runs along the gradient angle; <b>noise</b> lays soft blobs
@@ -607,7 +611,7 @@
       <b>scale</b> sets the size of the pattern. the others vary it across the frame
       and add together: <b>radial</b> grows it toward the centre (negative: the rim),
       <b>random</b> lays slow blobs of large and small, <b>ring</b> swells it on a
-      circle, <b>by vary map</b> follows the vary map. large areas grow more slowly.
+      circle, <b>by gradient map</b> follows the gradient map. large areas grow more slowly.
       the middle of a centred slider is zero — it catches there; hold <b>ctrl</b> to
       slide through.
     </div>
@@ -951,6 +955,16 @@ uniform float u_vmode;   // 0 the field wraps in v · 1 poles at both ends · 2 
    the curve is evaluated at the blended feed. */
 uniform sampler2D u_map;
 uniform float u_mapon, u_feed2, u_koff, u_koff2, u_rate2, u_size2, u_dtcap;
+/* the gradient map's ramp, reshaped: u_edge.x is the half-width of the blend
+   in map units (0.5 is the plain ramp, a few thousandths a hard border) and
+   .y where on the ramp the border sits. the eased curve keeps a hard border
+   from showing the texel steps of the map. */
+uniform vec2 u_edge;
+float gradAt(vec2 uv) {
+  float m = texture(u_map, uv).r;
+  float t = clamp((m - u_edge.y) / (2.0 * u_edge.x) + 0.5, 0.0, 1.0);
+  return u_edge.x < 0.4999 ? t * t * (3.0 - 2.0 * t) : t;
+}
 /* flow, orientation and scale — fields over the frame that steer the reaction
    rather than choose its regime. they depend only on where a texel sits and
    on their sliders, so they are baked into two textures (STEER_FRAG) when a
@@ -1132,7 +1146,7 @@ void main() {
 
   float feed = u_feed, kill = u_kill, dt = u_dt;
   if (u_mapon > 0.5) {
-    float m = texture(u_map, v_uv).r;
+    float m = gradAt(v_uv);
     feed = mix(u_feed, u_feed2, m);
     kill = sqrt(feed) * 0.5 - feed + mix(u_koff, u_koff2, m);
     // a smaller feature is a shorter diffusion length — the same damping the
@@ -1376,6 +1390,33 @@ float sampleB(vec2 uv) {
   float b01 = rawB(t + vec2(0.0, u_texel.y)), b11 = rawB(t + u_texel);
   return mix(mix(b00, b10, f.x), mix(b01, b11, f.x), f.y);
 }
+/* catmull-rom: the field read bicubically, with its slope from the same
+   sixteen taps. a bilinear read is continuous but its slope jumps at every
+   texel, and relief shading lights the slope, so wherever a texel covers
+   more than a pixel the emboss shows the grid as faint facets. this one's
+   slope is continuous, so the relief stays smooth however far the field is
+   stretched. returns (value, d/dx, d/dy), the slopes per texel. */
+void crWeights(float t, out vec4 w, out vec4 d) {
+  float t2 = t * t, t3 = t2 * t;
+  w = vec4(-0.5 * t3 + t2 - 0.5 * t, 1.5 * t3 - 2.5 * t2 + 1.0, -1.5 * t3 + 2.0 * t2 + 0.5 * t, 0.5 * t3 - 0.5 * t2);
+  d = vec4(-1.5 * t2 + 2.0 * t - 0.5, 4.5 * t2 - 5.0 * t, -4.5 * t2 + 4.0 * t + 0.5, 1.5 * t2 - t);
+}
+vec3 sampleBC(vec2 uv) {
+  vec2 p = uv / u_texel - 0.5;
+  vec2 i = floor(p), f = p - i;
+  vec4 wx, dx, wy, dy;
+  crWeights(f.x, wx, dx);
+  crWeights(f.y, wy, dy);
+  vec3 acc = vec3(0.0);
+  for (int y = 0; y < 4; y++) {
+    float v = (i.y + float(y) - 0.5) * u_texel.y;
+    vec4 row = vec4(rawB(vec2((i.x - 0.5) * u_texel.x, v)), rawB(vec2((i.x + 0.5) * u_texel.x, v)),
+                    rawB(vec2((i.x + 1.5) * u_texel.x, v)), rawB(vec2((i.x + 2.5) * u_texel.x, v)));
+    float rv = dot(wx, row);
+    acc += vec3(wy[y] * rv, wy[y] * dot(dx, row), dy[y] * rv);
+  }
+  return acc;
+}
 // a wider, weighted tap set — what the displacement rides on. a hard-edged
 // field would otherwise pull the mesh into facets; this lets the surface
 // swell across the whole feature instead of at its border.
@@ -1450,20 +1491,34 @@ ${FIELD_FX}
 uniform sampler2D u_ramp;
 uniform sampler2D u_map;
 uniform float u_lo, u_hi, u_relief, u_shine, u_mapshow;
+uniform vec2 u_edge;   // the gradient map's shaping, as the solver reads it
 uniform vec2  u_light;
 in vec2 v_uv;
 out vec4 outColor;
 void main() {
   vec2 uv = liquidWarp(v_uv);
-  float base = sampleB(uv);
+  vec2 gs = fieldStep();
+  // value and slope. on the solver's own lattice, read bicubically: a smooth
+  // slope is what keeps the relief free of the texel grid. on a coarser cell
+  // the slope is taken across a whole cell instead (see fieldStep).
+  float base;
+  vec2 slope;
+  if (u_smooth > 0.5 && u_grain <= 1.0) {
+    vec3 sc = sampleBC(uv);
+    base = sc.x;
+    slope = 2.0 * sc.yz;   // the same scale as a central difference over two texels
+  } else {
+    base = sampleB(uv);
+    slope = vec2(sampleB(uv + vec2(gs.x, 0.0)) - sampleB(uv - vec2(gs.x, 0.0)),
+                 sampleB(uv + vec2(0.0, gs.y)) - sampleB(uv - vec2(0.0, gs.y)));
+  }
   float swell = pulseAt(length(v_uv - 0.5), base);
   float B = base * swell;
   float t = smoothstep(u_lo, u_hi, B);
   vec3 col = texture(u_ramp, vec2(t, 0.5)).rgb;
   // normal from the B height field → diffuse + specular relief
-  vec2 gs = fieldStep();
-  float bx = (sampleB(uv + vec2(gs.x, 0.0)) - sampleB(uv - vec2(gs.x, 0.0))) * swell;
-  float by = (sampleB(uv + vec2(0.0, gs.y)) - sampleB(uv - vec2(0.0, gs.y))) * swell;
+  float bx = slope.x * swell;
+  float by = slope.y * swell;
   vec3 n = normalize(vec3(-bx * u_relief * 60.0, -by * u_relief * 60.0, 1.0));
   vec3 L = normalize(vec3(u_light, 0.85));
   vec3 V = vec3(0.0, 0.0, 1.0);
@@ -1481,7 +1536,8 @@ void main() {
   }
   // the parameter map, tinted over the pattern while it is being painted
   if (u_mapshow > 0.0) {
-    float m = texture(u_map, v_uv).r;
+    float t = clamp((texture(u_map, v_uv).r - u_edge.y) / (2.0 * u_edge.x) + 0.5, 0.0, 1.0);
+    float m = u_edge.x < 0.4999 ? t * t * (3.0 - 2.0 * t) : t;
     col = mix(col, vec3(1.0, 0.36, 0.42), m * 0.5 * u_mapshow);
   }
   outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
@@ -1883,12 +1939,19 @@ const makeField = (w, h) => makeTex(w, h, stateInternalFormat, gl.REPEAT);
    texel there covers seven times as much object along u as it does around v,
    and the pattern comes out drawn out along the knot however carefully the
    solver weights its laplacian. shaped to the object, a texel is a texel. */
+/* the budget is counted in css pixels, not device pixels. on a 2x screen a
+   cell per device pixel is four times the work for features too fine to
+   tell apart, and the frame rate it costs is what makes the motion stutter.
+   the display reads the field back bicubically, so a cell spread over a
+   few device pixels shades as smoothly as one that is not; "2×" is there for
+   anyone who wants the finer pattern. */
 function allocSim(preserve) {
   const scale = parseFloat(document.getElementById('simscale').value);
-  const budget = Math.max(1, canvas.width * scale) * Math.max(1, canvas.height * scale);
+  const cw = canvas.clientWidth || canvas.width, ch = canvas.clientHeight || canvas.height;
+  const budget = Math.max(1, cw * scale) * Math.max(1, ch * scale);
   const aspect = surfaceOn()
     ? Math.min(10, Math.max(0.1, surfAspect))
-    : canvas.width / Math.max(1, canvas.height);
+    : cw / Math.max(1, ch);
   const w = Math.max(64, Math.min(2048, Math.round(Math.sqrt(budget * aspect))));
   const h = Math.max(64, Math.min(2048, Math.round(Math.sqrt(budget / aspect))));
   if (w === simW && h === simH && fields) return;
@@ -1984,8 +2047,16 @@ const ORIENT_PARAMS = [
 ];
 const SCALE_PARAMS = [
   { id: 'cellsize', label: 'scale', min: 0.60, max: 4.00, step: 0.02, value: 1.00, dp: 2 },
-  bip('sc_radial', 'scale radial'), bip('sc_random', 'scale random'), bip('sc_ring', 'scale ring'), bip('sc_map', 'scale by vary map'),
+  bip('sc_radial', 'scale radial'), bip('sc_random', 'scale random'), bip('sc_ring', 'scale ring'), bip('sc_map', 'scale by gradient map'),
   bip('speed', 'speed'),
+];
+/* how the gradient map turns into a change of pattern: hardness narrows the
+   blend from the whole ramp (0) to a sharp border (1), position moves where
+   on the ramp the border sits — low gives more of the gold ring's pattern. */
+const GRAD_PARAMS = [
+  { id: 'map_edge', label: 'edge hardness', min: 0, max: 1, step: 0.01, value: 0, dp: 2,
+    fmt: v => (v <= 0 ? 'soft' : v >= 1 ? 'hard' : v.toFixed(2)) },
+  { id: 'map_mid',  label: 'edge position', min: 0.05, max: 0.95, step: 0.01, value: 0.5, dp: 2 },
 ];
 const DRAW_PARAMS = [
   { id: 'brush',  label: 'stroke size',   min: 2,     max: 140,   step: 1,      value: 24,     dp: 0 },
@@ -2048,7 +2119,7 @@ const MODEL_PARAMS = {
 const paramById = {};
 // the sliders the baked steering fields are made from
 const STEER_IDS = new Set([...FLOW_PARAMS, ...ORIENT_PARAMS, ...SCALE_PARAMS].map(d => d.id).filter(id => id !== 'cellsize' && id !== 'speed'));
-[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, MAP_PARAMS, FLOW_PARAMS, ORIENT_PARAMS, SCALE_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
+[RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, MAP_PARAMS, GRAD_PARAMS, FLOW_PARAMS, ORIENT_PARAMS, SCALE_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, ...Object.values(MODEL_PARAMS)].forEach(list =>
   list.forEach(d => { paramById[d.id] = d; P[d.id] = d.value; }));
 
 function buildParamRows(list, container, clear) {
@@ -2066,11 +2137,11 @@ function buildParamRows(list, container, clear) {
     container.appendChild(wrap);
     const input = wrap.querySelector('input');
     input.title = 'double-click to reset to ' + d.value;
-    input.addEventListener('input', e => setParam(d.id, snapZero(d, parseFloat(input.value)), false));
+    input.addEventListener('input', e => userSet(d.id, snapZero(d, parseFloat(input.value))));
     wrap.querySelector('.row1').insertBefore(pinButton(d.id), wrap.querySelector('.val'));
     wrap.querySelector('.val').addEventListener('click', () => editValue(d.id, wrap.querySelector('.val')));
     // double-click snaps a slider back to the value it started at
-    input.addEventListener('dblclick', () => setParam(d.id, d.value));
+    input.addEventListener('dblclick', () => userSet(d.id, d.value));
     wrap.querySelector('.midibtn').addEventListener('click', e => midiLearnToggle(d.id, e.altKey));
     refreshParamUI(d.id);
   }
@@ -2287,7 +2358,12 @@ function markPresetCustom() {
    a new pattern grows out of the old one. a second, gold ring picks the
    pattern a vary shape lays across the frame (the vary map below).
    ================================================================ */
-const PM_N = 288, PM_F0 = 0.010, PM_F1 = 0.110, PM_ML = 0.0028, PM_MR = 0.0016, PM_STEPS = 9000;
+/* 512 across: the map is shown about 260 css pixels wide, so on a 2x screen
+   every texel lands on a pixel. features keep their size in texels, so the
+   finer grid holds about three times as many of them, and the settling run
+   is longer to let the bigger map fill in. feed starts a little lower than
+   the band table does, to take in the slow travelling waves along the foot. */
+const PM_N = 512, PM_F0 = 0.006, PM_F1 = 0.110, PM_ML = 0.0028, PM_MR = 0.0016, PM_STEPS = 14000, PM_PER_FRAME = 90;
 const clamp01 = v => Math.min(1, Math.max(0, v));
 // map position (x across, y up, both 0..1) -> [feed, kill]
 function pmKF(x, y) {
@@ -2342,10 +2418,17 @@ precision highp float;
 uniform sampler2D u_state;
 in vec2 v_uv;
 out vec4 outColor;
+uniform vec2 u_texel;
 void main() {
   float b = texture(u_state, v_uv).g;
   float t = smoothstep(0.06, 0.32, b);
-  outColor = vec4(mix(vec3(0.075, 0.085, 0.10), vec3(0.80, 0.83, 0.86), t), 1.0);
+  // a little relief, lit from the upper left, so the shapes read as shapes
+  float gx = texture(u_state, v_uv + vec2(u_texel.x, 0.0)).g - texture(u_state, v_uv - vec2(u_texel.x, 0.0)).g;
+  float gy = texture(u_state, v_uv + vec2(0.0, u_texel.y)).g - texture(u_state, v_uv - vec2(0.0, u_texel.y)).g;
+  float lit = clamp(0.5 + 2.2 * (-gx + gy), 0.0, 1.0);
+  vec3 col = mix(vec3(0.075, 0.085, 0.10), vec3(0.80, 0.83, 0.86), t);
+  col *= mix(0.82, 1.12, lit);
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 const pmProg = program(PMAP_FRAG), pmShowProg = program(PMAP_SHOW_FRAG);
 var pm = {
@@ -2356,7 +2439,9 @@ var pm = {
   vary: null, drag: 0, applying: false,
 };
 pm.t1 = pm.c1.slice(); pm.t2 = pm.c2.slice();
-const pmCtx = document.getElementById('pmap').getContext('2d');
+const pmCanvas = document.getElementById('pmap');
+pmCanvas.width = pmCanvas.height = PM_N;
+const pmCtx = pmCanvas.getContext('2d');
 const pmPixels = new Uint8Array(PM_N * PM_N * 4);
 const PM_BAND = new Float32Array(K_BAND.flat());
 // set a map program up once; a run of passes then only swaps the textures
@@ -2366,8 +2451,8 @@ function pmUse(prog, seed) {
   gl.useProgram(prog.prog);
   gl.activeTexture(gl.TEXTURE0);
   gl.uniform1i(prog.u.u_state, 0);
+  if (prog.u.u_texel) gl.uniform2f(prog.u.u_texel, 1 / PM_N, 1 / PM_N);
   if (prog === pmProg) {
-    gl.uniform2f(prog.u.u_texel, 1 / PM_N, 1 / PM_N);
     gl.uniform3fv(prog.u.u_band, PM_BAND);
     gl.uniform1f(prog.u.u_f0, PM_F0); gl.uniform1f(prog.u.u_f1, PM_F1);
     gl.uniform1f(prog.u.u_ml, PM_ML); gl.uniform1f(prog.u.u_mr, PM_MR);
@@ -2388,7 +2473,7 @@ function pmSeed() {
 // a few hundred steps a frame until the map has settled, then it is left alone
 function pmTick() {
   if (pm.done >= PM_STEPS) return;
-  const n = Math.min(150, PM_STEPS - pm.done);
+  const n = Math.min(PM_PER_FRAME, PM_STEPS - pm.done);
   pmUse(pmProg);
   for (let i = 0; i < n; i++) { pmDrawTo(pm.fields[1 - pm.cur]); pm.cur = 1 - pm.cur; }
   pm.done += n;
@@ -4401,6 +4486,7 @@ function bakeSteer() {
   }
 }
 
+const stepClock = { last: 0, acc: 0 };
 function step() {
   if (steer.dirty) bakeSteer();
   gl.bindVertexArray(vao);
@@ -4422,6 +4508,7 @@ function step() {
   gl.uniform1f(simProg.u.u_koff2, P.map_koff);
   gl.uniform1f(simProg.u.u_rate2, P.map_rate);
   gl.uniform1f(simProg.u.u_size2, P.map_size);
+  gl.uniform2f(simProg.u.u_edge, gradEdge(), P.map_mid);
   gl.uniform1f(simProg.u.u_dtcap, 1.15 / Math.max(P.dA, P.dB));
   const on = steerOn();
   gl.uniform3f(simProg.u.u_steeron, on[0] ? 1 : 0, on[1] ? 1 : 0, on[2] ? 1 : 0);
@@ -4436,7 +4523,15 @@ function step() {
   gl.uniform1i(simProg.u.u_map, 3);
   setSurfaceUniforms(simProg);
   gl.activeTexture(gl.TEXTURE0);
-  const n = simSteps();
+  // steps/frame is set for a 60 hz screen. a faster screen takes fewer a
+  // frame, so the pattern moves at the same speed in more, smaller steps;
+  // a slow frame never takes more than the setting, or a heavy load would
+  // only feed itself.
+  const now = performance.now(), fdt = (now - (stepClock.last || now)) / 1000;
+  stepClock.last = now;
+  stepClock.acc += simSteps() * Math.min(1, Math.max(fdt, 1 / 240) * 60);
+  const n = Math.floor(stepClock.acc);
+  stepClock.acc -= n;
   for (let i = 0; i < n; i++) {
     const src = fields[cur], dst = fields[1 - cur];
     gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
@@ -4446,6 +4541,45 @@ function step() {
   }
 }
 
+/* sliders that steer the pattern glide to a new value instead of jumping.
+   a jump in scale, flow or orientation tears the pattern for a moment while
+   it catches up; moved there over a fraction of a second it reshapes in
+   place. the speed is a share of the slider's range per second, easing out
+   over the last part of the way, and it runs on wall time so it is the same
+   at any frame rate. */
+const GLIDE = new Set(['cellsize', 'speed', 'map_edge', 'map_mid', 'dA', 'dB', 'biasX', 'biasY',
+  'fl_radial', 'fl_rotate', 'fl_swirl', 'fl_bubble', 'fl_ring', 'fl_vortex', 'fl_vert',
+  'or_radial', 'or_circles', 'or_swirl', 'or_bubble', 'or_linear',
+  'sc_radial', 'sc_random', 'sc_ring', 'sc_map']);
+const glideTo = {};
+let glideLast = 0;
+function userSet(id, v) {
+  const d = paramById[id];
+  if (!d || !GLIDE.has(id)) { setParam(id, v, false); return; }
+  glideTo[id] = Math.min(pMax(d), Math.max(pMin(d), v));
+  refreshParamUI(id);
+}
+function glideTick() {
+  const now = performance.now(), dt = Math.min(0.1, (now - (glideLast || now)) / 1000);
+  glideLast = now;
+  for (const id in glideTo) {
+    const d = paramById[id], tgt = glideTo[id], cur = P[id];
+    const range = pMax(d) - pMin(d), dist = Math.abs(tgt - cur);
+    let speed = 1.4 * range * dt;
+    const slow = 0.2 * range;
+    if (dist < slow) speed *= Math.sqrt(dist / slow);
+    const done = dist <= Math.max(speed, range * 2e-4);
+    const v = done ? tgt : cur + Math.sign(tgt - cur) * speed;
+    // the slider being dragged keeps its own thumb; every other copy follows
+    const el = document.getElementById('in-' + id);
+    setParam(id, v, document.activeElement !== el);
+    if (done) delete glideTo[id];
+  }
+}
+// hardness 0 is the plain ramp: half-width 0.5 at the middle, so the identity.
+// it narrows quadratically, so most of the slider is spent near the soft end
+// where the change is visible, down to a border two texels of the map wide.
+const gradEdge = () => Math.max(0.002, 0.5 * (1 - P.map_edge) * (1 - P.map_edge));
 // speed scales the steps per frame, two octaves either way
 const simSteps = () => Math.max(1, Math.min(120, Math.round(P.steps * Math.pow(2, 2 * P.speed))));
 function setFieldFx(prog) {
@@ -4487,6 +4621,7 @@ function render() {
   gl.bindTexture(gl.TEXTURE_2D, mapTex);
   gl.uniform1i(displayProg.u.u_map, 3);
   gl.uniform1f(displayProg.u.u_mapshow, (currentModel === 'reaction' && mapShown()) ? 1 : 0);
+  gl.uniform2f(displayProg.u.u_edge, gradEdge(), P.map_mid);
   gl.activeTexture(gl.TEXTURE0);
   setFieldFx(displayProg);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -4494,6 +4629,7 @@ function render() {
 
 function frame() {
   uploadMap();
+  glideTick();
   pmTick();
   pmAnimate();
   if (!paused) simTime += 0.016;
@@ -4673,8 +4809,8 @@ function makeControl(id, valEl) {
   el.type = 'range'; el.min = pMin(d); el.max = pMax(d); el.step = d.step; el.value = P[id];
   if (d.bipolar) el.className = 'bipolar';
   el.setAttribute('aria-label', d.label);
-  el.addEventListener('input', () => setParam(id, snapZero(d, parseFloat(el.value)), false));
-  el.addEventListener('dblclick', () => setParam(id, d.value));
+  el.addEventListener('input', () => userSet(id, snapZero(d, parseFloat(el.value))));
+  el.addEventListener('dblclick', () => userSet(id, d.value));
   (bound[id] = bound[id] || new Set()).add({ el, val: valEl });
   // not on the page yet, so not through syncBound, which drops detached ones
   if (valEl) valEl.textContent = d.fmt ? d.fmt(P[id]) : P[id].toFixed(d.dp);
@@ -4764,7 +4900,7 @@ function renderDock() {
 // params that belong to what is on screen: the current model's, and every
 // shared list. the reaction's own list only while it is the model.
 function liveParamIds() {
-  const lists = [MAP_PARAMS, SCALE_PARAMS, FLOW_PARAMS, ORIENT_PARAMS, RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, MODEL_PARAMS[currentModel]];
+  const lists = [MAP_PARAMS, GRAD_PARAMS, SCALE_PARAMS, FLOW_PARAMS, ORIENT_PARAMS, RENDER_PARAMS, COLOR_PARAMS, LIQUID_PARAMS, DRAW_PARAMS, PROJECT_PARAMS, MODEL_PARAMS[currentModel]];
   const out = [];
   lists.forEach(l => l.forEach(d => { if (!d.hidden && document.getElementById('in-' + d.id)) out.push(d.id); }));
   return out;
@@ -4933,6 +5069,7 @@ buildParamRows(LIQUID_PARAMS, document.getElementById('params-liquid'), false);
 buildParamRows(RENDER_PARAMS, document.getElementById('params-render'), false);
 buildParamRows(DRAW_PARAMS, document.getElementById('params-brush'), false);
 buildParamRows(MAP_PARAMS, document.getElementById('params-map'), false);
+buildParamRows(GRAD_PARAMS, document.getElementById('params-grad'), false);
 buildParamRows(FLOW_PARAMS, document.getElementById('params-flow'), false);
 buildParamRows(ORIENT_PARAMS, document.getElementById('params-orient'), false);
 buildParamRows(SCALE_PARAMS, document.getElementById('params-scale'), false);
@@ -5035,3 +5172,4 @@ requestAnimationFrame(frame);
   else start();
 })();
 </script>
+

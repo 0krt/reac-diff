@@ -3,7 +3,7 @@
 An organic pattern synthesizer in a single dependency-free HTML file, in the
 same dark instrument-panel style as the lissajous app. The reaction-diffusion
 model is inspired by [Jason Webb's playground](https://jasonwebb.github.io/reaction-diffusion-playground/app.html),
-and its pattern map, vary-pattern shapes, flow, orientation and scale controls by
+and its pattern map, gradient maps, flow, orientation and scale controls by
 [Karl Sims' RD Tool](https://karlsims.com/rdtool.html) (reimplemented from how the
 tool behaves; no code or images are taken from it). Four more generative models
 sit alongside it.
@@ -194,13 +194,15 @@ Both work on the pattern rather than on the surface it sits on:
 ## Pattern map
 
 The pattern is picked on a map of the (feed, kill) plane rather than with
-sliders. At startup a small field is solved with feed rising up it and kill
-running across it, so every point of the map shows the pattern those two rates
+sliders. At startup a 512×512 field is solved for 14,000 steps (90 a frame,
+filling in over a few seconds) with feed rising up it from 0.006 to 0.110 and
+kill running across it, so every point of the map shows the pattern those two rates
 grow — solid shapes to the left, spots and solitons to the right, worms and
 mazes between. Kill is not laid out raw: across the map it spans the measured
 live band at that feed (see *live band* below) with a margin of dead plane on
 either side, so the whole width is useful and the edges show where patterns
-stop — flooded on the left, empty on the right.
+stop — flooded on the left, empty on the right. It is shown in grey with a
+little relief, and at 512 across every texel lands on a pixel of a 2× screen.
 
 Drag the ring (or use the arrow keys with the map focused) to pick a pattern.
 The ring sits under the pointer; the rates ease after it on a ~0.1 s time
@@ -209,15 +211,24 @@ The examples drop the ring on the ten classic presets. The feed and kill
 sliders are still there, folded into **Solver** with the diffusion rates, bias,
 timestep and steps per frame; moving them moves the ring.
 
-### Vary pattern
+### Gradient maps
 
 The five shape buttons under the map — radial, random, ring, horizontal,
 vertical — lay a second pattern across the frame, picked with a second, gold
 ring on the map: radial puts it in the centre, random in soft blobs, ring on a
 circle, horizontal to the right, vertical at the top. Pressing the lit button
-again drops it. The shapes are fills of the **vary map**, a greyscale map over
-the field that the reaction reads every step: black grows the main ring's
-pattern, white the gold ring's, grey the blend.
+again drops it. The sixth, **custom**, uses whatever was painted or imported.
+The shapes are fills of the **custom gradient map**, a greyscale map over the
+field that the reaction reads every step: black grows the main ring's pattern,
+white the gold ring's, grey the blend.
+
+- **Edge hardness** sets how fast one pattern turns into the other: at 0 the
+  blend follows the map's own ramp, at 1 it is a sharp border. The map value
+  `m` is remapped to `clamp((m − c)/2w + ½)` with half-width
+  `w = ½(1 − hardness)²` (floor 0.002), then eased with a smoothstep so a hard
+  border does not show the map's texels. **Edge position** is `c`: it moves the
+  border along the ramp, toward one pattern or the other. **Show map** draws the
+  remapped value, so it shows where the border will fall.
 
 - **Blending kill** — the gold ring's kill is held as an offset from the live
   curve `k_c(f)` at its feed; the solver blends feed and the offset and
@@ -228,14 +239,14 @@ pattern, white the gold ring's, grey the blend.
   stability cap as the timestep slider. **Map feature size** damps the
   diffusion weights there, so features come out smaller.
 - **Paint map** in the Draw section sends the brush, line, rect and circle tools
-  to the vary map instead of the field, with a paint value and a softness. The
-  map is tinted over the pattern while you paint it, or whenever **show map** is
-  on. Painting lights the last vary button.
-- **Import image** loads a photo as the vary map: cover-fitted, read by
+  to the custom gradient map instead of the field, with a paint value and a
+  softness. The map is tinted over the pattern while you paint it, or whenever
+  **show map** is on. Painting lights the **custom** button.
+- **Import image** loads a photo as the custom gradient map: cover-fitted, read by
   luminance with dark areas taking the gold ring's pattern, contrast stretched
   to the full range. **Gradient** (along the gradient angle), **radial**,
   **noise**, **invert** and **clear** fill it directly.
-- The vary map is saved in the preset JSON as a PNG.
+- The custom gradient map is saved in the preset JSON as a PNG.
 
 ## Scale, flow and orientation
 
@@ -243,10 +254,10 @@ Signed sliders, zero in the middle, that add together — so any of them can be
 combined.
 
 - **Scale** sets the size of the pattern (the cell size, below). **Scale
-  radial**, **random**, **ring** and **by vary map** vary it across the frame,
+  radial**, **random**, **ring** and **by gradient map** vary it across the frame,
   in octaves: radial grows it toward the centre (negative: toward the rim),
   random lays slow blobs of large and small, ring swells it on a circle round
-  the centre, by vary map follows the vary map. Feature size goes as `√(D/k)`;
+  the centre, by gradient map follows the gradient map. Feature size goes as `√(D/k)`;
   below 1× the diffusion weights are damped (always stable), above 1× the
   reaction is slowed by the square instead, so nothing is raised past the
   stability limit — the price is that large areas grow more slowly. The local
@@ -277,7 +288,7 @@ combined.
   reads.
 - **Baked fields** — flow, orientation and scale depend only on position and
   their sliders, so they are rendered into two textures when a slider moves
-  (or the grid or vary map changes) and the solver reads them with one fetch,
+  (or the grid or gradient map changes) and the solver reads them with one fetch,
   instead of every texel re-evaluating trig and hashed noise on every step.
   With a one-texel cell the flow's upstream bilinear read is taken from the
   nine stencil taps the Laplacian already fetched, since the velocity is held
@@ -287,7 +298,19 @@ combined.
 
 - **GPU simulation** — WebGL2 ping-pong Gray–Scott solver with a toroidal
   (wrapping) field, up to 40 sim steps per frame,
-  quarter / half / full / 2× resolution.
+  quarter / half / full / 2× resolution. Resolution is counted in CSS pixels:
+  "full" is one cell per CSS pixel, so a 2× screen solves a quarter of the
+  cells it would per device pixel and keeps its frame rate; "2×" is one per
+  device pixel there.
+- **Steady speed** — steps per frame is the count for a 60 Hz screen. A faster
+  screen takes proportionally fewer per frame (carried over between frames),
+  so the pattern moves at the same speed in smaller steps; a slow frame never
+  takes more than the setting.
+- **Gliding sliders** — the sliders that steer the pattern (scale, speed,
+  flow, orientation, edge hardness and position, diffusion, bias) move to a
+  new value over a fraction of a second instead of jumping: at 1.4× the
+  slider's range per second, easing out over the last fifth. A jump tears the
+  pattern while it catches up; a glide reshapes it in place.
 - **Live band** — most of the (feed, kill) plane is dead: the field collapses to
   uniform A or floods with B, and anything you draw is erased in a few frames.
   With the band locked (the default), the kill slider spans only the living
@@ -337,8 +360,12 @@ combined.
   growth drifts in a chosen direction (as in the original playground).
 - **Lit rendering** — the B field is treated as a height map and shaded with
   diffuse + specular lighting (adjustable relief, specular, and light angle),
-  plus in-shader bilinear smoothing, for a much crisper, 3-D look. Runs full
-  resolution by default.
+  plus in-shader smoothing. With smoothing on, the field is read bicubically
+  (Catmull-Rom) and the relief is lit from the same sixteen taps' slope.
+  A bilinear read is continuous but its slope jumps at every texel, and the
+  relief lights the slope, so wherever a cell covers more than a pixel the
+  old read showed the grid as faint facets. On a coarse cell size the slope
+  is still taken across a whole cell.
 - **Drawing tools** — brush, line, rectangle, and ellipse, with fill/outline
   and paint/erase modes and a stabilizer for smooth freehand strokes. All
   drawing goes through GPU stamps that are **independent of the reaction**, so
